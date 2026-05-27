@@ -1,4 +1,6 @@
-import { ROADMAP_DEFAULTS } from "../config/roadmapDefaults";
+import { ROADMAP_DEFAULTS, TEAM_OPTIONS } from "../config/roadmapDefaults";
+
+const VALID_TEAM_IDS = TEAM_OPTIONS.map((t) => t.id);
 
 function getApiUrl() {
   const url = import.meta.env.VITE_SHEETS_API_URL;
@@ -14,14 +16,31 @@ export function getGoogleSheetUrl() {
   return url ? String(url).trim() : "";
 }
 
+function isTeamFilterDefinition(entry) {
+  return entry && typeof entry === "object" && entry.id && entry.label && !entry.timeline;
+}
+
+function resolveTeamFilterDefinitions(payload) {
+  if (Array.isArray(payload?.cohorts) && isTeamFilterDefinition(payload.cohorts[0])) {
+    return payload.cohorts;
+  }
+  if (Array.isArray(payload?.teams) && isTeamFilterDefinition(payload.teams[0])) {
+    return payload.teams;
+  }
+  return ROADMAP_DEFAULTS.teams;
+}
+
 export function mergeRoadmapData(sheetPayload) {
+  const payload = sheetPayload || {};
+  const sheetData = { ...payload };
+  delete sheetData.teams;
+  delete sheetData.cohorts;
+
   return {
     ...ROADMAP_DEFAULTS,
-    ...sheetPayload,
-    meta: { ...ROADMAP_DEFAULTS.meta, ...(sheetPayload?.meta || {}) },
-    cohorts: sheetPayload?.cohorts?.length
-      ? sheetPayload.cohorts
-      : ROADMAP_DEFAULTS.cohorts,
+    ...sheetData,
+    meta: { ...ROADMAP_DEFAULTS.meta, ...(payload.meta || {}) },
+    teams: resolveTeamFilterDefinitions(payload),
   };
 }
 
@@ -86,17 +105,27 @@ export async function deleteInitiative({ adminToken, team, id }) {
   });
 }
 
+function normalizeTeamsField(teams) {
+  if (Array.isArray(teams)) {
+    return teams.map((t) => String(t).trim()).filter(Boolean);
+  }
+  return String(teams || "")
+    .split(/[,;]/)
+    .map((t) => t.trim())
+    .filter(Boolean);
+}
+
 export function validateInitiativeForm(fields) {
   const errors = {};
-  const team = String(fields.team || "").trim();
+  const domain = String(fields.domain ?? fields.team ?? "").trim();
   const id = String(fields.id || "").trim();
   const name = String(fields.name || "").trim();
   const description = String(fields.description || "").trim();
   const timelineStart = String(fields.timelineStart || "").trim();
   const timelineEnd = String(fields.timelineEnd || "").trim();
-  const cohort = String(fields.cohort || "").trim();
+  const teamIds = normalizeTeamsField(fields.teams ?? fields.cohort);
 
-  if (!team) errors.team = "Team is required.";
+  if (!domain) errors.domain = "Domain is required.";
   if (!id) errors.id = "ID is required.";
   if (!name) errors.name = "Name is required.";
   if (!description) errors.description = "Description is required.";
@@ -105,8 +134,10 @@ export function validateInitiativeForm(fields) {
   if (timelineStart && timelineEnd && timelineEnd < timelineStart) {
     errors.timelineEnd = "End date must be on or after start date.";
   }
-  if (cohort && !["c1", "c2", "c3", "c4"].includes(cohort)) {
-    errors.cohort = "Cohort must be c1, c2, c3, or c4.";
+
+  const invalid = teamIds.filter((t) => !VALID_TEAM_IDS.includes(t));
+  if (invalid.length > 0) {
+    errors.teams = `Teams must be one of: ${VALID_TEAM_IDS.join(", ")}.`;
   }
 
   return { errors, valid: Object.keys(errors).length === 0 };

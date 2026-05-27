@@ -1,25 +1,25 @@
 import { useCallback, useState } from "react";
-import { COHORT_OPTIONS } from "../config/roadmapDefaults";
-import { DEFAULT_INITIATIVE_COLOR, formatTeamLabel } from "../utils/roadmapUtils";
+import { TEAM_OPTIONS } from "../config/roadmapDefaults";
+import { DEFAULT_INITIATIVE_COLOR, formatDomainLabel } from "../utils/roadmapUtils";
 import { addInitiative, validateInitiativeForm } from "../services/sheetsApi";
 
 const EMPTY_FORM = {
-  team: "",
+  domain: "",
   id: "",
   name: "",
   description: "",
   timelineStart: "",
   timelineEnd: "",
   color: DEFAULT_INITIATIVE_COLOR,
-  cohort: "",
+  teams: [],
 };
 
-function buildInitialForm(teams) {
-  return { ...EMPTY_FORM, team: teams[0] || "" };
+function buildInitialForm(domains) {
+  return { ...EMPTY_FORM, domain: domains[0] || "" };
 }
 
 export default function AdminModal({
-  teams,
+  domains,
   adminToken,
   onUnlock,
   onLock,
@@ -28,7 +28,7 @@ export default function AdminModal({
 }) {
   const [tokenInput, setTokenInput] = useState("");
   const unlocked = Boolean(adminToken);
-  const [form, setForm] = useState(() => buildInitialForm(teams));
+  const [form, setForm] = useState(() => buildInitialForm(domains));
   const [fieldErrors, setFieldErrors] = useState({});
   const [submitError, setSubmitError] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -53,6 +53,22 @@ export default function AdminModal({
     setFieldErrors((prev) => {
       const next = { ...prev };
       delete next[name];
+      delete next.teams;
+      return next;
+    });
+    setSubmitError("");
+  }, []);
+
+  const toggleTeam = useCallback((teamId) => {
+    setForm((prev) => {
+      const set = new Set(prev.teams);
+      if (set.has(teamId)) set.delete(teamId);
+      else set.add(teamId);
+      return { ...prev, teams: [...set] };
+    });
+    setFieldErrors((prev) => {
+      const next = { ...prev };
+      delete next.teams;
       return next;
     });
     setSubmitError("");
@@ -72,14 +88,14 @@ export default function AdminModal({
       try {
         await addInitiative({
           adminToken,
-          team: form.team.trim(),
+          team: form.domain.trim(),
           id: form.id.trim(),
           name: form.name.trim(),
           description: form.description.trim(),
           timelineStart: form.timelineStart,
           timelineEnd: form.timelineEnd,
           color: form.color || "",
-          cohort: form.cohort || "",
+          teams: form.teams.join(","),
         });
         onSuccess?.();
         onClose();
@@ -169,26 +185,26 @@ export default function AdminModal({
 
             <label className="admin-field">
               <span className="admin-field__label">
-                Team <span className="admin-field__req">*</span>
+                Domain <span className="admin-field__req">*</span>
               </span>
               <select
                 className="admin-field__input"
-                value={form.team}
-                onChange={(e) => updateField("team", e.target.value)}
+                value={form.domain}
+                onChange={(e) => updateField("domain", e.target.value)}
                 required
-                disabled={teams.length === 0}
+                disabled={domains.length === 0}
               >
-                {teams.map((tab) => (
+                {domains.map((tab) => (
                   <option key={tab} value={tab}>
-                    {formatTeamLabel(tab)}
+                    {formatDomainLabel(tab)}
                   </option>
                 ))}
               </select>
-              {teams.length === 0 ? (
-                <span className="admin-field__error">No teams loaded yet.</span>
+              {domains.length === 0 ? (
+                <span className="admin-field__error">No domains loaded yet.</span>
               ) : null}
-              {fieldErrors.team ? (
-                <span className="admin-field__error">{fieldErrors.team}</span>
+              {fieldErrors.domain ? (
+                <span className="admin-field__error">{fieldErrors.domain}</span>
               ) : null}
             </label>
 
@@ -288,23 +304,27 @@ export default function AdminModal({
               </div>
             </div>
 
-            <label className="admin-field">
-              <span className="admin-field__label">Cohort (optional)</span>
-              <select
-                className="admin-field__input"
-                value={form.cohort}
-                onChange={(e) => updateField("cohort", e.target.value)}
-              >
-                {COHORT_OPTIONS.map((opt) => (
-                  <option key={opt.value || "none"} value={opt.value}>
-                    {opt.label}
-                  </option>
+            <fieldset className="admin-field admin-field--teams">
+              <legend className="admin-field__label">Teams (optional)</legend>
+              <p className="admin-field__hint-inline">
+                Select one or more teams. Stored as comma-separated values in the sheet.
+              </p>
+              <div className="admin-team-checkboxes">
+                {TEAM_OPTIONS.map((opt) => (
+                  <label key={opt.id} className="admin-team-check">
+                    <input
+                      type="checkbox"
+                      checked={form.teams.includes(opt.id)}
+                      onChange={() => toggleTeam(opt.id)}
+                    />
+                    <span>{opt.label}</span>
+                  </label>
                 ))}
-              </select>
-              {fieldErrors.cohort ? (
-                <span className="admin-field__error">{fieldErrors.cohort}</span>
+              </div>
+              {fieldErrors.teams ? (
+                <span className="admin-field__error">{fieldErrors.teams}</span>
               ) : null}
-            </label>
+            </fieldset>
 
             {submitError ? (
               <p className="admin-modal__submit-error" role="alert">
@@ -325,7 +345,7 @@ export default function AdminModal({
                 <button
                   type="submit"
                   className="admin-btn admin-btn--primary"
-                  disabled={submitting || teams.length === 0}
+                  disabled={submitting || domains.length === 0}
                 >
                   {submitting ? "Saving…" : "Add to sheet"}
                 </button>

@@ -1,15 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import {
   getAllInitiatives,
-  getTeamsForFilter,
+  getDomainsForFilter,
   isFilterActive,
 } from "../utils/roadmapUtils";
 
-function FilterPill({ label, active, cohortActive, swatchColor, dotColor, onClick }) {
+function FilterPill({ label, active, teamActive, swatchColor, dotColor, onClick }) {
   const className = [
     "filter-pill",
     active && "filter-pill--active",
-    cohortActive && "filter-pill--cohort-active",
+    teamActive && "filter-pill--team-active",
   ]
     .filter(Boolean)
     .join(" ");
@@ -136,12 +136,42 @@ function InitiativeSelect({ initiatives, value, onChange }) {
   );
 }
 
-export default function Filters({ data, filterState, onTeamChange, onInitiativeChange, onCohortChange, onClear }) {
-  const teams = getTeamsForFilter(data);
+function getTeamFilterDefinitions(data) {
+  const defs = data.teams;
+  if (Array.isArray(defs) && defs.length > 0 && defs[0]?.id && defs[0]?.label) {
+    return defs;
+  }
+  return data.cohorts || [];
+}
+
+export default function Filters({
+  data,
+  filterState,
+  onDomainChange,
+  onInitiativeChange,
+  onTeamsChange,
+  onClear,
+}) {
+  const domains = getDomainsForFilter(data);
   const initiatives = getAllInitiatives(data);
-  const cohorts = data.cohorts || [];
+  const teamFilters = getTeamFilterDefinitions(data);
   const filterActive = isFilterActive(filterState);
   const selectedInitiativeId = getSelectedInitiativeId(filterState);
+  const selectedTeams = filterState.teams;
+
+  const handleTeamPillClick = (teamId) => {
+    if (teamId === "all") {
+      onTeamsChange(null);
+      return;
+    }
+    const next = new Set(selectedTeams || []);
+    if (next.has(teamId)) {
+      next.delete(teamId);
+    } else {
+      next.add(teamId);
+    }
+    onTeamsChange(next.size > 0 ? next : null);
+  };
 
   const clearFiltersButton = (
     <button
@@ -156,13 +186,13 @@ export default function Filters({ data, filterState, onTeamChange, onInitiativeC
 
   return (
     <div className="roadmap__filters" aria-label="Roadmap filters">
-      <FilterRow labelText="Team:">
-        {teams.map((team) => (
+      <FilterRow labelText="Domain:">
+        {domains.map((domain) => (
           <FilterPill
-            key={team.id}
-            label={team.label}
-            active={filterState.team === team.id}
-            onClick={() => onTeamChange(team.id)}
+            key={domain.id}
+            label={domain.label}
+            active={filterState.domain === domain.id}
+            onClick={() => onDomainChange(domain.id)}
           />
         ))}
       </FilterRow>
@@ -178,20 +208,20 @@ export default function Filters({ data, filterState, onTeamChange, onInitiativeC
         />
       </div>
 
-      {cohorts.length > 0 && (
-        <FilterRow labelText="Cohort:">
+      {teamFilters.length > 0 && (
+        <FilterRow labelText="Team:">
           <FilterPill
-            label="All cohorts"
-            cohortActive={filterState.cohort === "all"}
-            onClick={() => onCohortChange("all")}
+            label="All teams"
+            teamActive={!selectedTeams || selectedTeams.size === 0}
+            onClick={() => handleTeamPillClick("all")}
           />
-          {cohorts.map((cohort) => (
+          {teamFilters.map((team) => (
             <FilterPill
-              key={cohort.id}
-              label={cohort.label}
-              cohortActive={filterState.cohort === cohort.id}
-              dotColor={cohort.color}
-              onClick={() => onCohortChange(cohort.id)}
+              key={team.id}
+              label={team.label}
+              teamActive={selectedTeams?.has(team.id)}
+              dotColor={team.color}
+              onClick={() => handleTeamPillClick(team.id)}
             />
           ))}
         </FilterRow>

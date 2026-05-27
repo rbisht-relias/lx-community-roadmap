@@ -22,7 +22,7 @@ function positionTooltip(tooltipEl, target) {
 export default function InitiativeTooltip({
   item,
   target,
-  team,
+  domain,
   canDelete,
   onDelete,
   onDeleteStart,
@@ -52,10 +52,10 @@ export default function InitiativeTooltip({
   useEffect(() => {
     setDeleteError("");
     setDeleting(false);
-  }, [item?.id, team]);
+  }, [item?.id, domain]);
 
   const handleDelete = useCallback(async () => {
-    if (!item || !team || !onDelete || deleting) return;
+    if (!item || !domain || !onDelete || deleting) return;
     const label = item.name || item.id;
     const confirmed = window.confirm(
       `Delete "${label}" (${item.id}) from the Google Sheet? This cannot be undone from the app.`
@@ -66,13 +66,13 @@ export default function InitiativeTooltip({
     setDeleteError("");
     onDeleteStart?.();
     try {
-      await onDelete({ team, id: item.id });
+      await onDelete({ team: domain, id: item.id });
     } catch (err) {
       onDeleteError?.();
       setDeleteError(err.message || "Failed to delete initiative.");
       setDeleting(false);
     }
-  }, [deleting, item, onDelete, onDeleteError, onDeleteStart, team]);
+  }, [deleting, domain, item, onDelete, onDeleteError, onDeleteStart]);
 
   const visible = Boolean(item && target);
   const interactive = visible && canDelete;

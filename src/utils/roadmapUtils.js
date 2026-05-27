@@ -1,22 +1,49 @@
-export const RESERVED_DATA_KEYS = new Set(["meta", "quarters", "cohorts"]);
+export const RESERVED_DATA_KEYS = new Set(["meta", "quarters", "teams", "cohorts"]);
 export const DEFAULT_INITIATIVE_COLOR = "#64748b";
 
-export function getTeamKeys(data) {
+export function getDomainKeys(data) {
   return Object.keys(data).filter(
     (key) => !RESERVED_DATA_KEYS.has(key) && Array.isArray(data[key])
   );
 }
 
-export function formatTeamLabel(teamId) {
-  return teamId.charAt(0).toUpperCase() + teamId.slice(1);
+/** @deprecated use getDomainKeys */
+export const getTeamKeys = getDomainKeys;
+
+export function formatDomainLabel(domainId) {
+  return domainId.charAt(0).toUpperCase() + domainId.slice(1);
 }
 
-export function getTeamsForFilter(data) {
-  const teams = [{ id: "all", label: "All teams" }];
-  getTeamKeys(data).forEach((id) => {
-    teams.push({ id, label: formatTeamLabel(id) });
+/** @deprecated use formatDomainLabel */
+export const formatTeamLabel = formatDomainLabel;
+
+export function getDomainsForFilter(data) {
+  const domains = [{ id: "all", label: "All domains" }];
+  getDomainKeys(data).forEach((id) => {
+    domains.push({ id, label: formatDomainLabel(id) });
   });
-  return teams;
+  return domains;
+}
+
+/** Parse sheet/API value into team id list (comma-separated or legacy single cohort). */
+export function parseInitiativeTeams(item) {
+  if (!item) return [];
+  if (Array.isArray(item.teams)) {
+    return item.teams.map((t) => String(t).trim()).filter(Boolean);
+  }
+  const raw = item.teams ?? item.cohort;
+  if (!raw) return [];
+  return String(raw)
+    .split(/[,;]/)
+    .map((t) => t.trim())
+    .filter(Boolean);
+}
+
+export function initiativeMatchesTeamsFilter(item, selectedTeams) {
+  if (!selectedTeams || selectedTeams.size === 0) return true;
+  const assigned = parseInitiativeTeams(item);
+  if (assigned.length === 0) return false;
+  return [...selectedTeams].some((id) => assigned.includes(id));
 }
 
 export function withDefaultColor(item) {
@@ -60,7 +87,7 @@ const CALENDAR_QUARTERS = [
 
 export function collectTimelineDates(data) {
   const dates = [];
-  getTeamKeys(data).forEach((key) => {
+  getDomainKeys(data).forEach((key) => {
     (data[key] || []).forEach((item) => {
       if (Array.isArray(item.timeline)) {
         item.timeline.forEach((value) => {
@@ -177,19 +204,19 @@ export function buildYearSpans(quarters) {
 }
 
 export function getAllInitiatives(data) {
-  return getTeamKeys(data).flatMap((key) => (data[key] || []).map(withDefaultColor));
+  return getDomainKeys(data).flatMap((key) => (data[key] || []).map(withDefaultColor));
 }
 
 export function getRoadmapRows(data, quarters) {
-  return getTeamKeys(data).map((key) => ({
+  return getDomainKeys(data).map((key) => ({
     id: key,
-    label: formatTeamLabel(key),
+    label: formatDomainLabel(key),
     initiatives: assignLanes((data[key] || []).map(withDefaultColor), quarters),
   }));
 }
 
 export function initiativeMatchesFilter(item, category, filterState) {
-  if (filterState.team !== "all" && category !== filterState.team) return false;
+  if (filterState.domain !== "all" && category !== filterState.domain) return false;
   if (
     filterState.initiatives &&
     filterState.initiatives.size > 0 &&
@@ -197,20 +224,23 @@ export function initiativeMatchesFilter(item, category, filterState) {
   ) {
     return false;
   }
-  if (filterState.cohort !== "all" && item.cohort !== filterState.cohort) return false;
+  if (!initiativeMatchesTeamsFilter(item, filterState.teams)) return false;
   return true;
 }
 
-export function rowMatchesTeamFilter(category, filterState) {
-  if (filterState.team === "all") return true;
-  return filterState.team === category;
+export function rowMatchesDomainFilter(category, filterState) {
+  if (filterState.domain === "all") return true;
+  return filterState.domain === category;
 }
+
+/** @deprecated use rowMatchesDomainFilter */
+export const rowMatchesTeamFilter = rowMatchesDomainFilter;
 
 export function isFilterActive(filterState) {
   return (
-    filterState.team !== "all" ||
+    filterState.domain !== "all" ||
     (filterState.initiatives && filterState.initiatives.size > 0) ||
-    filterState.cohort !== "all"
+    (filterState.teams && filterState.teams.size > 0)
   );
 }
 
@@ -221,21 +251,21 @@ export function getQuarterRangeLabel(quarters) {
   return `${first.label} ${first.year} — ${last.label} ${last.year}`;
 }
 
-export function getTeamScopeLabel(filterState) {
-  if (!filterState || filterState.team === "all") return "all teams";
-  return formatTeamLabel(filterState.team);
+export function getDomainScopeLabel(filterState) {
+  if (!filterState || filterState.domain === "all") return "all domains";
+  return formatDomainLabel(filterState.domain);
 }
 
-/** e.g. "Q1 2026 — Q4 2030 · all teams" from loaded data + active filters */
+/** e.g. "Q1 2026 — Q4 2030 · all domains" from loaded data + active filters */
 export function getSubtitle(quarters, filterState) {
   const range = getQuarterRangeLabel(quarters);
-  const teamScope = getTeamScopeLabel(filterState);
-  if (range && teamScope) return `${range} · ${teamScope}`;
-  return range || teamScope || "";
+  const domainScope = getDomainScopeLabel(filterState);
+  if (range && domainScope) return `${range} · ${domainScope}`;
+  return range || domainScope || "";
 }
 
 export const INITIAL_FILTER_STATE = {
-  team: "all",
+  domain: "all",
   initiatives: null,
-  cohort: "all",
+  teams: null,
 };

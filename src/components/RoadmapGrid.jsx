@@ -3,7 +3,7 @@ import {
   buildYearSpans,
   getRoadmapRows,
   isFilterActive,
-  rowMatchesTeamFilter,
+  rowMatchesDomainFilter,
 } from "../utils/roadmapUtils";
 import InitiativeBar from "./InitiativeBar";
 
@@ -59,7 +59,7 @@ export default function RoadmapGrid({
         const gridRow = HEADER_ROWS + rowIndex + 1;
         const laneCount = Math.max(1, ...row.initiatives.map((item) => item.lane + 1));
         const labelDimmed =
-          filterActive && !rowMatchesTeamFilter(row.id, filterState);
+          filterActive && !rowMatchesDomainFilter(row.id, filterState);
 
         return (
           <Fragment key={row.id}>

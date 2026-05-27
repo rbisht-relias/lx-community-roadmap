@@ -7,7 +7,7 @@
  * is included automatically — no code changes when you add a new tab.
  */
 
-var VALID_COHORTS = ['c1', 'c2', 'c3', 'c4'];
+var VALID_TEAMS = ['c1', 'c2', 'c3', 'c4'];
 
 /** Temporary dev token — replace via Script property ADMIN_TOKEN before production. */
 var DEFAULT_ADMIN_TOKEN = 'relias-2026';
@@ -50,7 +50,7 @@ function readRoadmap_() {
   for (var i = 0; i < sheets.length; i++) {
     var sheet = sheets[i];
     if (!isRoadmapDataSheet_(sheet)) continue;
-    var key = teamKeyFromSheetName_(sheet.getName());
+    var key = domainKeyFromSheetName_(sheet.getName());
     out[key] = readSheetRows_(sheet);
   }
   return out;
@@ -63,7 +63,7 @@ function getTabKeys_() {
   for (var i = 0; i < sheets.length; i++) {
     var sheet = sheets[i];
     if (isRoadmapDataSheet_(sheet)) {
-      tabs.push(teamKeyFromSheetName_(sheet.getName()));
+      tabs.push(domainKeyFromSheetName_(sheet.getName()));
     }
   }
   return tabs;
@@ -100,24 +100,67 @@ function isRoadmapDataSheet_(sheet) {
   return startOk && endOk;
 }
 
-function teamKeyFromSheetName_(name) {
+function domainKeyFromSheetName_(name) {
   return String(name).trim().toLowerCase();
 }
 
-function sheetNameFromTeamKey_(teamKey) {
-  var key = String(teamKey).trim().toLowerCase();
+/** POST body still uses `team` for the domain (sheet tab) key. */
+function sheetNameFromDomainKey_(domainKey) {
+  var key = String(domainKey).trim().toLowerCase();
   var sheets = SpreadsheetApp.getActiveSpreadsheet().getSheets();
   for (var i = 0; i < sheets.length; i++) {
     var sheet = sheets[i];
-    if (teamKeyFromSheetName_(sheet.getName()) === key && isRoadmapDataSheet_(sheet)) {
+    if (domainKeyFromSheetName_(sheet.getName()) === key && isRoadmapDataSheet_(sheet)) {
       return sheet.getName();
     }
   }
   throw new Error(
-    'No sheet found for team "' +
-      teamKey +
+    'No sheet found for domain "' +
+      domainKey +
       '". Add a tab with row-1 headers: ID, Name, Description, Timeline Start, Timeline End.'
   );
+}
+
+function parseTeamsCell_(value) {
+  if (!value) return [];
+  return String(value)
+    .split(/[,;]/)
+    .map(function (part) {
+      return String(part || '').trim();
+    })
+    .filter(function (part) {
+      return part.length > 0;
+    });
+}
+
+function formatTeamsCell_(teamIds) {
+  if (!teamIds || !teamIds.length) return '';
+  return teamIds.join(',');
+}
+
+function validateTeamIds_(teamIds) {
+  if (!teamIds || !teamIds.length) return;
+  for (var i = 0; i < teamIds.length; i++) {
+    if (VALID_TEAMS.indexOf(teamIds[i]) === -1) {
+      throw new Error('Teams must be one of: ' + VALID_TEAMS.join(', ') + '.');
+    }
+  }
+}
+
+function readTeamsFromBody_(body) {
+  if (Array.isArray(body.teams)) {
+    return body.teams
+      .map(function (id) {
+        return String(id || '').trim();
+      })
+      .filter(function (id) {
+        return id.length > 0;
+      });
+  }
+  if (body.cohort) {
+    return parseTeamsCell_(body.cohort);
+  }
+  return parseTeamsCell_(body.teams);
 }
 
 function readSheetRows_(sheet) {
@@ -137,8 +180,10 @@ function readSheetRows_(sheet) {
     };
     var color = String(row[5] || '').trim();
     if (color) item.color = color;
-    var cohort = String(row[6] || '').trim();
-    if (cohort) item.cohort = cohort;
+    var teams = parseTeamsCell_(row[6]);
+    if (teams.length) {
+      item.teams = teams;
+    }
     items.push(item);
   }
   return items;
@@ -169,12 +214,12 @@ function findRowIndexById_(sheet, id) {
 }
 
 function deleteInitiative_(body) {
-  var team = String(body.team || '').trim().toLowerCase();
+  var domain = String(body.team || '').trim().toLowerCase();
   var id = String(body.id || '').trim();
-  if (!team) throw new Error('Team is required.');
+  if (!domain) throw new Error('Domain is required.');
   if (!id) throw new Error('ID is required.');
 
-  var sheetName = sheetNameFromTeamKey_(team);
+  var sheetName = sheetNameFromDomainKey_(domain);
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
   if (!sheet) throw new Error('Sheet not found: ' + sheetName);
 
@@ -188,16 +233,16 @@ function deleteInitiative_(body) {
 }
 
 function appendInitiative_(body) {
-  var team = String(body.team || '').trim().toLowerCase();
+  var domain = String(body.team || '').trim().toLowerCase();
   var id = String(body.id || '').trim();
   var name = String(body.name || '').trim();
   var description = String(body.description || '').trim();
   var timelineStart = String(body.timelineStart || '').trim();
   var timelineEnd = String(body.timelineEnd || '').trim();
   var color = String(body.color || '').trim();
-  var cohort = String(body.cohort || '').trim();
+  var teamIds = readTeamsFromBody_(body);
 
-  if (!team) throw new Error('Team is required.');
+  if (!domain) throw new Error('Domain is required.');
   if (!id) throw new Error('ID is required.');
   if (!name) throw new Error('Name is required.');
   if (!description) throw new Error('Description is required.');
@@ -206,14 +251,12 @@ function appendInitiative_(body) {
     throw new Error('Dates must be YYYY-MM-DD.');
   }
   if (timelineEnd < timelineStart) throw new Error('Timeline end must be on or after start.');
-  if (cohort && VALID_COHORTS.indexOf(cohort) === -1) {
-    throw new Error('Cohort must be c1, c2, c3, or c4.');
-  }
+  validateTeamIds_(teamIds);
   if (color && !/^#[0-9A-Fa-f]{6}$/.test(color)) {
     throw new Error('Color must be a hex value like #f97316.');
   }
 
-  var sheetName = sheetNameFromTeamKey_(team);
+  var sheetName = sheetNameFromDomainKey_(domain);
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
   if (!sheet) throw new Error('Sheet not found: ' + sheetName);
 
@@ -234,7 +277,7 @@ function appendInitiative_(body) {
     timelineStart,
     timelineEnd,
     color || '',
-    cohort || '',
+    formatTeamsCell_(teamIds),
   ]);
 
   return { ok: true };

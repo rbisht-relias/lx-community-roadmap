@@ -25,9 +25,9 @@ html[data-theme="dark"] {
   --shadow: rgba(0, 0, 0, 0.45);
   --overlay: rgba(0, 0, 0, 0.65);
   --tooltip-bg: #1e2430;
-  --cohort-active-bg: #f3f4f6;
-  --cohort-active-text: #111827;
-  --cohort-active-hover: #e5e7eb;
+  --team-active-bg: #f3f4f6;
+  --team-active-text: #111827;
+  --team-active-hover: #e5e7eb;
   --close-hover-bg: rgba(255, 255, 255, 0.06);
   --error: #f87171;
   --success: #4ade80;
@@ -68,9 +68,9 @@ html[data-theme="light"] {
   --shadow: rgba(15, 23, 42, 0.12);
   --overlay: rgba(15, 23, 42, 0.4);
   --tooltip-bg: #ffffff;
-  --cohort-active-bg: #111827;
-  --cohort-active-text: #f9fafb;
-  --cohort-active-hover: #1f2937;
+  --team-active-bg: #111827;
+  --team-active-text: #f9fafb;
+  --team-active-hover: #1f2937;
   --close-hover-bg: rgba(0, 0, 0, 0.06);
   --error: #dc2626;
   --success: #16a34a;
@@ -460,14 +460,14 @@ body {
   border-color: var(--border-hover);
 }
 
-.filter-pill--cohort-active {
-  background: var(--cohort-active-bg);
-  color: var(--cohort-active-text);
-  border-color: var(--cohort-active-bg);
+.filter-pill--team-active {
+  background: var(--team-active-bg);
+  color: var(--team-active-text);
+  border-color: var(--team-active-bg);
 }
 
-.filter-pill--cohort-active:hover {
-  background: var(--cohort-active-hover);
+.filter-pill--team-active:hover {
+  background: var(--team-active-hover);
 }
 
 .filter-pill__swatch {
@@ -1273,6 +1273,42 @@ select.admin-field__input {
 .admin-field__error {
   font-size: 0.75rem;
   color: var(--error);
+}
+
+.admin-field--teams {
+  border: none;
+  margin: 0;
+  padding: 0;
+}
+
+.admin-field--teams .admin-field__label {
+  margin-bottom: 4px;
+}
+
+.admin-field__hint-inline {
+  margin: 0 0 10px;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.admin-team-checkboxes {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.admin-team-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.admin-team-check input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent, #3b82f6);
 }
 
 .admin-btn {

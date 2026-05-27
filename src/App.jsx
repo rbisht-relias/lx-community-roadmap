@@ -21,7 +21,7 @@ import {
 } from "./services/sheetsApi";
 import {
   getSubtitle,
-  getTeamKeys,
+  getDomainKeys,
   INITIAL_FILTER_STATE,
 } from "./utils/roadmapUtils";
 
@@ -30,7 +30,7 @@ export default function App() {
   const { data, quarters, loading, error, refetch } = useRoadmapData();
   const [loaderVisible, setLoaderVisible] = useState(true);
   const [filterState, setFilterState] = useState(INITIAL_FILTER_STATE);
-  const [tooltip, setTooltip] = useState({ item: null, target: null, team: null });
+  const [tooltip, setTooltip] = useState({ item: null, target: null, domain: null });
   const hideTooltipTimerRef = useRef(null);
   const [adminOpen, setAdminOpen] = useState(false);
   const [adminToken, setAdminToken] = useState(
@@ -49,8 +49,8 @@ export default function App() {
     clearStoredAdminTokens();
   }, []);
 
-  const handleTeamChange = useCallback((teamId) => {
-    setFilterState((prev) => ({ ...prev, team: teamId }));
+  const handleDomainChange = useCallback((domainId) => {
+    setFilterState((prev) => ({ ...prev, domain: domainId }));
   }, []);
 
   const handleInitiativeChange = useCallback((initiativeId) => {
@@ -60,8 +60,8 @@ export default function App() {
     }));
   }, []);
 
-  const handleCohortChange = useCallback((cohortId) => {
-    setFilterState((prev) => ({ ...prev, cohort: cohortId }));
+  const handleTeamsChange = useCallback((teams) => {
+    setFilterState((prev) => ({ ...prev, teams }));
   }, []);
 
   const handleClearFilters = useCallback(() => {
@@ -76,9 +76,9 @@ export default function App() {
   }, []);
 
   const handleShowTooltip = useCallback(
-    (item, target, team) => {
+    (item, target, domain) => {
       clearHideTooltipTimer();
-      setTooltip({ item, target, team: team || null });
+      setTooltip({ item, target, domain: domain || null });
     },
     [clearHideTooltipTimer]
   );
@@ -86,7 +86,7 @@ export default function App() {
   const handleHideTooltip = useCallback(() => {
     clearHideTooltipTimer();
     hideTooltipTimerRef.current = setTimeout(() => {
-      setTooltip({ item: null, target: null, team: null });
+      setTooltip({ item: null, target: null, domain: null });
     }, 150);
   }, [clearHideTooltipTimer]);
 
@@ -157,9 +157,9 @@ export default function App() {
           <Filters
             data={data}
             filterState={filterState}
-            onTeamChange={handleTeamChange}
+            onDomainChange={handleDomainChange}
             onInitiativeChange={handleInitiativeChange}
-            onCohortChange={handleCohortChange}
+            onTeamsChange={handleTeamsChange}
             onClear={handleClearFilters}
           />
           <div className="roadmap__scroll">
@@ -174,7 +174,7 @@ export default function App() {
           <InitiativeTooltip
             item={tooltip.item}
             target={tooltip.target}
-            team={tooltip.team}
+            domain={tooltip.domain}
             canDelete={canDeleteInitiatives}
             onDelete={canDeleteInitiatives ? handleDeleteInitiative : undefined}
             onDeleteStart={canDeleteInitiatives ? handleDeleteStart : undefined}
@@ -187,7 +187,7 @@ export default function App() {
 
       {adminOpen && data ? (
         <AdminModal
-          teams={getTeamKeys(data)}
+          domains={getDomainKeys(data)}
           adminToken={adminToken}
           onUnlock={handleAdminUnlock}
           onLock={handleAdminLock}
