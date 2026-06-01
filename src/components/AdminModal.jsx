@@ -1,6 +1,5 @@
 import { useCallback, useState } from "react";
-import { TEAM_OPTIONS } from "../config/roadmapDefaults";
-import { DEFAULT_INITIATIVE_COLOR, formatDomainLabel } from "../utils/roadmapUtils";
+import { formatDomainLabel } from "../utils/roadmapUtils";
 import { addInitiative, validateInitiativeForm } from "../services/sheetsApi";
 
 const EMPTY_FORM = {
@@ -10,7 +9,7 @@ const EMPTY_FORM = {
   description: "",
   timelineStart: "",
   timelineEnd: "",
-  color: DEFAULT_INITIATIVE_COLOR,
+  status: "",
   teams: [],
 };
 
@@ -20,6 +19,10 @@ function buildInitialForm(domains) {
 
 export default function AdminModal({
   domains,
+  teamOptions = [],
+  validTeamIds = [],
+  statusOptions = [],
+  validStatusLabels = [],
   adminToken,
   onUnlock,
   onLock,
@@ -77,7 +80,11 @@ export default function AdminModal({
   const handleSubmit = useCallback(
     async (e) => {
       e.preventDefault();
-      const { errors, valid } = validateInitiativeForm(form);
+      const { errors, valid } = validateInitiativeForm(
+        form,
+        validTeamIds,
+        validStatusLabels
+      );
       if (!valid) {
         setFieldErrors(errors);
         return;
@@ -94,7 +101,7 @@ export default function AdminModal({
           description: form.description.trim(),
           timelineStart: form.timelineStart,
           timelineEnd: form.timelineEnd,
-          color: form.color || "",
+          status: form.status || "",
           teams: form.teams.join(","),
         });
         onSuccess?.();
@@ -105,7 +112,7 @@ export default function AdminModal({
         setSubmitting(false);
       }
     },
-    [adminToken, form, onClose, onSuccess]
+    [adminToken, form, onClose, onSuccess, validTeamIds, validStatusLabels]
   );
 
   const footer = (content) => (
@@ -290,37 +297,48 @@ export default function AdminModal({
               </label>
             </div>
 
-            <div className="admin-field admin-field--color">
-              <span className="admin-field__label">Color (optional)</span>
-              <div className="admin-field__color-row">
-                <input
-                  type="color"
-                  className="admin-field__color"
-                  value={form.color}
-                  onChange={(e) => updateField("color", e.target.value)}
-                  aria-label="Initiative color"
-                />
-                <span className="admin-field__color-value">{form.color}</span>
-              </div>
-            </div>
+            <label className="admin-field">
+              <span className="admin-field__label">Status (optional)</span>
+              <select
+                className="admin-field__input"
+                value={form.status}
+                onChange={(e) => updateField("status", e.target.value)}
+              >
+                <option value="">None</option>
+                {statusOptions.map((opt) => (
+                  <option key={opt.id} value={opt.label}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+              {fieldErrors.status ? (
+                <span className="admin-field__error">{fieldErrors.status}</span>
+              ) : null}
+            </label>
 
             <fieldset className="admin-field admin-field--teams">
               <legend className="admin-field__label">Teams (optional)</legend>
               <p className="admin-field__hint-inline">
                 Select one or more teams. Stored as comma-separated values in the sheet.
               </p>
-              <div className="admin-team-checkboxes">
-                {TEAM_OPTIONS.map((opt) => (
-                  <label key={opt.id} className="admin-team-check">
-                    <input
-                      type="checkbox"
-                      checked={form.teams.includes(opt.id)}
-                      onChange={() => toggleTeam(opt.id)}
-                    />
-                    <span>{opt.label}</span>
-                  </label>
-                ))}
-              </div>
+              {teamOptions.length === 0 ? (
+                <p className="admin-field__hint-inline">
+                  No teams in App Config. Add teams via Manage teams or the sheet.
+                </p>
+              ) : (
+                <div className="admin-team-checkboxes">
+                  {teamOptions.map((opt) => (
+                    <label key={opt.id} className="admin-team-check">
+                      <input
+                        type="checkbox"
+                        checked={form.teams.includes(opt.id)}
+                        onChange={() => toggleTeam(opt.id)}
+                      />
+                      <span>{opt.label}</span>
+                    </label>
+                  ))}
+                </div>
+              )}
               {fieldErrors.teams ? (
                 <span className="admin-field__error">{fieldErrors.teams}</span>
               ) : null}

@@ -1,5 +1,11 @@
-export const RESERVED_DATA_KEYS = new Set(["meta", "quarters", "teams", "cohorts"]);
+import { applyStatusToInitiative, DEFAULT_STATUSES } from "../config/statusConfig";
+
+export const RESERVED_DATA_KEYS = new Set(["meta", "quarters", "teams", "cohorts", "statuses"]);
 export const DEFAULT_INITIATIVE_COLOR = "#64748b";
+
+function getStatusDefinitions(data) {
+  return data?.statuses?.length ? data.statuses : DEFAULT_STATUSES;
+}
 
 export function getDomainKeys(data) {
   return Object.keys(data).filter(
@@ -46,8 +52,17 @@ export function initiativeMatchesTeamsFilter(item, selectedTeams) {
   return [...selectedTeams].some((id) => assigned.includes(id));
 }
 
-export function withDefaultColor(item) {
-  return { ...item, color: item.color || DEFAULT_INITIATIVE_COLOR };
+export function withDefaultColor(item, statusDefinitions) {
+  return applyStatusToInitiative(item, statusDefinitions);
+}
+
+export function initiativeMatchesStatusFilter(item, selectedStatuses) {
+  if (!selectedStatuses || selectedStatuses.size === 0) return true;
+  const status = String(item?.status || "").trim();
+  if (!status) return false;
+  return [...selectedStatuses].some(
+    (label) => label.toLowerCase() === status.toLowerCase()
+  );
 }
 
 export function parseDate(value) {
@@ -156,21 +171,110 @@ export function setQuartersFromData(data) {
   return parseQuartersRaw(raw);
 }
 
-export function dateToColumn(date, quarters) {
+/** Minimum span on the 0..quarterCount timeline (fraction of one quarter). */
+const MIN_TIMELINE_SPAN = 0.06;
+
+function startOfDay(date) {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+function daysInclusive(from, to) {
+  const ms = startOfDay(to).getTime() - startOfDay(from).getTime();
+  return Math.floor(ms / 86400000) + 1;
+}
+
+/** 0 at quarter start, 1 at quarter end — bar begins on the start date. */
+export function fractionAtQuarterStart(date, quarter) {
+  const qStart = startOfDay(quarter.start);
+  const qEnd = startOfDay(quarter.end);
+  const d = startOfDay(date);
+  const clamped = d < qStart ? qStart : d > qEnd ? qEnd : d;
+  const totalDays = daysInclusive(qStart, qEnd);
+  const dayIndex = daysInclusive(qStart, clamped);
+  return Math.max(0, Math.min(1, (dayIndex - 1) / totalDays));
+}
+
+/** 0 at quarter start, 1 at quarter end — bar ends through the end date. */
+export function fractionAtQuarterEnd(date, quarter) {
+  const qStart = startOfDay(quarter.start);
+  const qEnd = startOfDay(quarter.end);
+  const d = startOfDay(date);
+  const clamped = d < qStart ? qStart : d > qEnd ? qEnd : d;
+  const totalDays = daysInclusive(qStart, qEnd);
+  const dayIndex = daysInclusive(qStart, clamped);
+  return Math.max(0, Math.min(1, dayIndex / totalDays));
+}
+
+/**
+ * Position on a timeline where each quarter is one unit (0 .. quarters.length).
+ */
+export function dateToTimelinePosition(date, quarters, edge = "start") {
+  if (!quarters.length) return 0;
+  const d = parseDate(date);
+  if (!d) return 0;
+
   for (let i = 0; i < quarters.length; i++) {
-    if (date >= quarters[i].start && date <= quarters[i].end) return i + 1;
+    const q = quarters[i];
+    if (d >= q.start && d <= q.end) {
+      const frac =
+        edge === "end" ? fractionAtQuarterEnd(d, q) : fractionAtQuarterStart(d, q);
+      return i + frac;
+    }
   }
-  if (date < quarters[0].start) return 1;
+
+  if (d < quarters[0].start) return 0;
   return quarters.length;
 }
 
+export function spansOverlap(a, b) {
+  return !(a.endPos <= b.startPos || b.endPos <= a.startPos);
+}
+
+export function dateToColumn(date, quarters) {
+  const pos = dateToTimelinePosition(date, quarters, "start");
+  return Math.min(quarters.length, Math.max(1, Math.floor(pos) + 1));
+}
+
 export function timelineToSpan(timeline, quarters) {
+  const quarterCount = quarters.length;
+  const fallback = {
+    start: 1,
+    end: 2,
+    startPos: 0,
+    endPos: Math.min(1, quarterCount),
+    quarterCount,
+  };
+
+  if (!quarterCount) return fallback;
+
   const start = parseDate(timeline[0]);
   const end = parseDate(timeline[1]);
-  if (!start || !end) return { start: 1, end: 2 };
-  const colStart = dateToColumn(start, quarters);
-  const colEnd = dateToColumn(end, quarters);
-  return { start: colStart, end: Math.max(colStart + 1, colEnd + 1) };
+  if (!start || !end) return fallback;
+
+  let startPos = dateToTimelinePosition(start, quarters, "start");
+  let endPos = dateToTimelinePosition(end, quarters, "end");
+
+  if (endPos <= startPos) {
+    endPos = Math.min(quarterCount, startPos + MIN_TIMELINE_SPAN);
+  } else if (endPos - startPos < MIN_TIMELINE_SPAN) {
+    endPos = Math.min(quarterCount, startPos + MIN_TIMELINE_SPAN);
+  }
+
+  const colStart = Math.min(quarterCount, Math.max(1, Math.floor(startPos) + 1));
+  const colEnd = Math.min(
+    quarterCount + 1,
+    Math.max(colStart + 1, Math.ceil(endPos) + 1)
+  );
+
+  return {
+    start: colStart,
+    end: colEnd,
+    startPos,
+    endPos,
+    quarterCount,
+  };
 }
 
 export function assignLanes(initiatives, quarters) {
@@ -178,14 +282,11 @@ export function assignLanes(initiatives, quarters) {
   return initiatives.map((item) => {
     const span = timelineToSpan(item.timeline || [], quarters);
     let lane = 0;
-    while (
-      lanes[lane] &&
-      lanes[lane].some((placed) => !(span.end <= placed.start || span.start >= placed.end))
-    ) {
+    while (lanes[lane] && lanes[lane].some((placed) => spansOverlap(span, placed))) {
       lane++;
     }
     if (!lanes[lane]) lanes[lane] = [];
-    lanes[lane].push({ start: span.start, end: span.end });
+    lanes[lane].push({ startPos: span.startPos, endPos: span.endPos });
     return { ...item, span, lane };
   });
 }
@@ -204,15 +305,36 @@ export function buildYearSpans(quarters) {
 }
 
 export function getAllInitiatives(data) {
-  return getDomainKeys(data).flatMap((key) => (data[key] || []).map(withDefaultColor));
+  const statusDefs = getStatusDefinitions(data);
+  return getDomainKeys(data).flatMap((key) =>
+    (data[key] || []).map((item) => withDefaultColor(item, statusDefs))
+  );
 }
 
 export function getRoadmapRows(data, quarters) {
+  const statusDefs = getStatusDefinitions(data);
   return getDomainKeys(data).map((key) => ({
     id: key,
     label: formatDomainLabel(key),
-    initiatives: assignLanes((data[key] || []).map(withDefaultColor), quarters),
+    initiatives: assignLanes(
+      (data[key] || []).map((item) => withDefaultColor(item, statusDefs)),
+      quarters
+    ),
   }));
+}
+
+export function patchInitiativeInData(data, domain, initiativeId, updates) {
+  if (!data || !domain) return data;
+  const rows = data[domain];
+  if (!Array.isArray(rows)) return data;
+  const statusDefs = getStatusDefinitions(data);
+  return {
+    ...data,
+    [domain]: rows.map((item) => {
+      if (item.id !== initiativeId) return item;
+      return withDefaultColor({ ...item, ...updates }, statusDefs);
+    }),
+  };
 }
 
 export function initiativeMatchesFilter(item, category, filterState) {
@@ -225,6 +347,7 @@ export function initiativeMatchesFilter(item, category, filterState) {
     return false;
   }
   if (!initiativeMatchesTeamsFilter(item, filterState.teams)) return false;
+  if (!initiativeMatchesStatusFilter(item, filterState.statuses)) return false;
   return true;
 }
 
@@ -240,7 +363,8 @@ export function isFilterActive(filterState) {
   return (
     filterState.domain !== "all" ||
     (filterState.initiatives && filterState.initiatives.size > 0) ||
-    (filterState.teams && filterState.teams.size > 0)
+    (filterState.teams && filterState.teams.size > 0) ||
+    (filterState.statuses && filterState.statuses.size > 0)
   );
 }
 
@@ -268,4 +392,5 @@ export const INITIAL_FILTER_STATE = {
   domain: "all",
   initiatives: null,
   teams: null,
+  statuses: null,
 };

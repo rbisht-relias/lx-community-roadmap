@@ -23,7 +23,10 @@ export default function InitiativeTooltip({
   item,
   target,
   domain,
+  statuses = [],
+  canEditStatus,
   canDelete,
+  onStatusChange,
   onDelete,
   onDeleteStart,
   onDeleteError,
@@ -33,6 +36,8 @@ export default function InitiativeTooltip({
   const tooltipRef = useRef(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState("");
+  const [statusError, setStatusError] = useState("");
+  const [localStatus, setLocalStatus] = useState("");
 
   useEffect(() => {
     if (!item || !target || !tooltipRef.current) return;
@@ -47,12 +52,14 @@ export default function InitiativeTooltip({
 
     window.addEventListener("scroll", handleScroll, true);
     return () => window.removeEventListener("scroll", handleScroll, true);
-  }, [item, target, canDelete, deleteError]);
+  }, [item, target, canDelete, canEditStatus, deleteError, statusError, localStatus]);
 
   useEffect(() => {
     setDeleteError("");
     setDeleting(false);
-  }, [item?.id, domain]);
+    setStatusError("");
+    setLocalStatus(item?.status || "");
+  }, [item?.id, domain, item?.status]);
 
   const handleDelete = useCallback(async () => {
     if (!item || !domain || !onDelete || deleting) return;
@@ -74,8 +81,29 @@ export default function InitiativeTooltip({
     }
   }, [deleting, domain, item, onDelete, onDeleteError, onDeleteStart]);
 
+  const handleStatusSelect = useCallback(
+    (e) => {
+      const nextStatus = e.target.value;
+      const currentStatus = localStatus || item?.status || "";
+      if (!item || !domain || !onStatusChange || nextStatus === currentStatus) {
+        return;
+      }
+
+      setLocalStatus(nextStatus);
+      setStatusError("");
+
+      void onStatusChange({ domain, id: item.id, status: nextStatus }).catch((err) => {
+        setLocalStatus(item?.status || "");
+        setStatusError(err.message || "Failed to update status.");
+      });
+    },
+    [domain, item, localStatus, onStatusChange]
+  );
+
+  const displayStatus = localStatus || item?.status || "";
+
   const visible = Boolean(item && target);
-  const interactive = visible && canDelete;
+  const interactive = visible && (canDelete || canEditStatus);
 
   return (
     <div
@@ -100,8 +128,31 @@ export default function InitiativeTooltip({
               {formatTimelineRange(item.timeline)}
             </span>
           ) : null}
+          {displayStatus ? (
+            <span className="initiative-tooltip__status-label">{displayStatus}</span>
+          ) : null}
           {item.description ? (
             <span className="initiative-tooltip__desc">{item.description}</span>
+          ) : null}
+          {canEditStatus && statuses.length > 0 ? (
+            <label className="initiative-tooltip__status-field">
+              <span className="initiative-tooltip__status-field-label">Status</span>
+              <select
+                className="initiative-tooltip__status-select"
+                value={localStatus}
+                onChange={handleStatusSelect}
+              >
+                <option value="">—</option>
+                {statuses.map((s) => (
+                  <option key={s.id} value={s.label}>
+                    {s.label}
+                  </option>
+                ))}
+              </select>
+              {statusError ? (
+                <span className="initiative-tooltip__error">{statusError}</span>
+              ) : null}
+            </label>
           ) : null}
           {canDelete ? (
             <div className="initiative-tooltip__actions">

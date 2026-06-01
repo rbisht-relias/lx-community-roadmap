@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import AdminModal from "./components/AdminModal";
+import TeamsAdminModal from "./components/TeamsAdminModal";
 import {
   applyAdminTokenFromUrl,
   clearStoredAdminTokens,
@@ -14,10 +15,15 @@ import RoadmapGrid from "./components/RoadmapGrid";
 import InitiativeTooltip from "./components/InitiativeTooltip";
 import { useRoadmapData } from "./hooks/useRoadmapData";
 import { useTheme } from "./hooks/useTheme";
+import { resolveStatus } from "./config/statusConfig";
 import {
   deleteInitiative,
   getGoogleSheetUrl,
+  getTeamOptionsForAdmin,
+  getValidTeamIds,
+  getValidStatusLabels,
   hasSheetsApi,
+  updateInitiativeStatus,
 } from "./services/sheetsApi";
 import {
   getSubtitle,
@@ -27,12 +33,13 @@ import {
 
 export default function App() {
   const { preference: themePreference, setThemePreference } = useTheme();
-  const { data, quarters, loading, error, refetch } = useRoadmapData();
+  const { data, quarters, loading, error, refetch, patchInitiative } = useRoadmapData();
   const [loaderVisible, setLoaderVisible] = useState(true);
   const [filterState, setFilterState] = useState(INITIAL_FILTER_STATE);
   const [tooltip, setTooltip] = useState({ item: null, target: null, domain: null });
   const hideTooltipTimerRef = useRef(null);
   const [adminOpen, setAdminOpen] = useState(false);
+  const [teamsAdminOpen, setTeamsAdminOpen] = useState(false);
   const [adminToken, setAdminToken] = useState(
     () => applyAdminTokenFromUrl() || getStoredAdminToken()
   );
@@ -62,6 +69,10 @@ export default function App() {
 
   const handleTeamsChange = useCallback((teams) => {
     setFilterState((prev) => ({ ...prev, teams }));
+  }, []);
+
+  const handleStatusesChange = useCallback((statuses) => {
+    setFilterState((prev) => ({ ...prev, statuses }));
   }, []);
 
   const handleClearFilters = useCallback(() => {
@@ -129,6 +140,61 @@ export default function App() {
   const googleSheetUrl = getGoogleSheetUrl();
   const showGoogleSheetLink = Boolean(adminToken && googleSheetUrl);
   const canDeleteInitiatives = Boolean(showAdmin && adminToken);
+  const canEditStatus = Boolean(showAdmin && adminToken);
+
+  const handleStatusChange = useCallback(
+    async ({ domain, id, status }) => {
+      if (!adminToken) {
+        throw new Error("Admin token required to update status.");
+      }
+
+      const rows = data?.[domain];
+      const previous = Array.isArray(rows) ? rows.find((row) => row.id === id) : null;
+      const snapshot = {
+        status: previous?.status || "",
+        color: previous?.color || "#64748b",
+      };
+
+      const resolved = resolveStatus(status, data?.statuses);
+      const optimistic = {
+        status: resolved.label,
+        color: resolved.color,
+      };
+
+      patchInitiative(domain, id, optimistic);
+      setTooltip((prev) => {
+        if (!prev.item || prev.item.id !== id || prev.domain !== domain) {
+          return prev;
+        }
+        return {
+          ...prev,
+          item: { ...prev.item, ...optimistic },
+        };
+      });
+
+      try {
+        await updateInitiativeStatus({
+          adminToken,
+          team: domain,
+          id,
+          status,
+        });
+      } catch (err) {
+        patchInitiative(domain, id, snapshot);
+        setTooltip((prev) => {
+          if (!prev.item || prev.item.id !== id || prev.domain !== domain) {
+            return prev;
+          }
+          return {
+            ...prev,
+            item: { ...prev.item, ...snapshot },
+          };
+        });
+        throw err;
+      }
+    },
+    [adminToken, data, patchInitiative]
+  );
 
   if (loaderVisible) {
     return (
@@ -147,6 +213,7 @@ export default function App() {
         themePreference={themePreference}
         onThemeChange={setThemePreference}
         onAddClick={showAdmin ? () => setAdminOpen(true) : undefined}
+        onManageTeamsClick={showAdmin ? () => setTeamsAdminOpen(true) : undefined}
         googleSheetUrl={showGoogleSheetLink ? googleSheetUrl : undefined}
       />
 
@@ -160,6 +227,7 @@ export default function App() {
             onDomainChange={handleDomainChange}
             onInitiativeChange={handleInitiativeChange}
             onTeamsChange={handleTeamsChange}
+            onStatusesChange={handleStatusesChange}
             onClear={handleClearFilters}
           />
           <div className="roadmap__scroll">
@@ -175,7 +243,10 @@ export default function App() {
             item={tooltip.item}
             target={tooltip.target}
             domain={tooltip.domain}
+            statuses={data.statuses || []}
+            canEditStatus={canEditStatus}
             canDelete={canDeleteInitiatives}
+            onStatusChange={canEditStatus ? handleStatusChange : undefined}
             onDelete={canDeleteInitiatives ? handleDeleteInitiative : undefined}
             onDeleteStart={canDeleteInitiatives ? handleDeleteStart : undefined}
             onDeleteError={canDeleteInitiatives ? handleDeleteError : undefined}
@@ -188,10 +259,25 @@ export default function App() {
       {adminOpen && data ? (
         <AdminModal
           domains={getDomainKeys(data)}
+          teamOptions={getTeamOptionsForAdmin(data)}
+          validTeamIds={getValidTeamIds(data)}
+          statusOptions={data.statuses || []}
+          validStatusLabels={getValidStatusLabels(data)}
           adminToken={adminToken}
           onUnlock={handleAdminUnlock}
           onLock={handleAdminLock}
           onClose={() => setAdminOpen(false)}
+          onSuccess={handleAdminSuccess}
+        />
+      ) : null}
+
+      {teamsAdminOpen && data ? (
+        <TeamsAdminModal
+          teams={data.teams || []}
+          adminToken={adminToken}
+          onUnlock={handleAdminUnlock}
+          onLock={handleAdminLock}
+          onClose={() => setTeamsAdminOpen(false)}
           onSuccess={handleAdminSuccess}
         />
       ) : null}

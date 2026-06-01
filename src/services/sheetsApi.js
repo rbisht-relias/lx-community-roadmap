@@ -1,6 +1,5 @@
-import { ROADMAP_DEFAULTS, TEAM_OPTIONS } from "../config/roadmapDefaults";
-
-const VALID_TEAM_IDS = TEAM_OPTIONS.map((t) => t.id);
+import { resolveStatusDefinitions } from "../config/statusConfig";
+import { ROADMAP_DEFAULTS } from "../config/roadmapDefaults";
 
 function getApiUrl() {
   const url = import.meta.env.VITE_SHEETS_API_URL;
@@ -24,8 +23,10 @@ function resolveTeamFilterDefinitions(payload) {
   if (Array.isArray(payload?.cohorts) && isTeamFilterDefinition(payload.cohorts[0])) {
     return payload.cohorts;
   }
-  if (Array.isArray(payload?.teams) && isTeamFilterDefinition(payload.teams[0])) {
-    return payload.teams;
+  if (Array.isArray(payload?.teams) && payload.teams.length > 0) {
+    if (!payload.teams[0] || isTeamFilterDefinition(payload.teams[0])) {
+      return payload.teams;
+    }
   }
   return ROADMAP_DEFAULTS.teams;
 }
@@ -35,13 +36,26 @@ export function mergeRoadmapData(sheetPayload) {
   const sheetData = { ...payload };
   delete sheetData.teams;
   delete sheetData.cohorts;
+  delete sheetData.statuses;
 
   return {
     ...ROADMAP_DEFAULTS,
     ...sheetData,
     meta: { ...ROADMAP_DEFAULTS.meta, ...(payload.meta || {}) },
     teams: resolveTeamFilterDefinitions(payload),
+    statuses: resolveStatusDefinitions(payload.statuses),
   };
+}
+
+export function getValidTeamIds(data) {
+  return (data?.teams || []).map((t) => t.id).filter(Boolean);
+}
+
+export function getTeamOptionsForAdmin(data) {
+  return (data?.teams || []).map((t) => ({
+    id: t.id,
+    label: t.label === t.id ? t.label : `${t.label} (${t.id})`,
+  }));
 }
 
 async function parseJsonResponse(res) {
@@ -105,6 +119,34 @@ export async function deleteInitiative({ adminToken, team, id }) {
   });
 }
 
+export async function addTeam({ adminToken, teamId, teamName, color }) {
+  return postToSheetsApi({
+    action: "addTeam",
+    adminToken,
+    teamId: String(teamId || "").trim(),
+    teamName: String(teamName || "").trim(),
+    color: String(color || "").trim(),
+  });
+}
+
+export async function deleteTeam({ adminToken, teamId }) {
+  return postToSheetsApi({
+    action: "deleteTeam",
+    adminToken,
+    teamId: String(teamId || "").trim(),
+  });
+}
+
+export async function updateInitiativeStatus({ adminToken, team, id, status }) {
+  return postToSheetsApi({
+    action: "updateStatus",
+    adminToken,
+    team: String(team || "").trim().toLowerCase(),
+    id: String(id || "").trim(),
+    status: String(status || "").trim(),
+  });
+}
+
 function normalizeTeamsField(teams) {
   if (Array.isArray(teams)) {
     return teams.map((t) => String(t).trim()).filter(Boolean);
@@ -115,7 +157,11 @@ function normalizeTeamsField(teams) {
     .filter(Boolean);
 }
 
-export function validateInitiativeForm(fields) {
+export function getValidStatusLabels(data) {
+  return (data?.statuses || []).map((s) => s.label).filter(Boolean);
+}
+
+export function validateInitiativeForm(fields, validTeamIds = [], validStatusLabels = []) {
   const errors = {};
   const domain = String(fields.domain ?? fields.team ?? "").trim();
   const id = String(fields.id || "").trim();
@@ -123,6 +169,7 @@ export function validateInitiativeForm(fields) {
   const description = String(fields.description || "").trim();
   const timelineStart = String(fields.timelineStart || "").trim();
   const timelineEnd = String(fields.timelineEnd || "").trim();
+  const status = String(fields.status || "").trim();
   const teamIds = normalizeTeamsField(fields.teams ?? fields.cohort);
 
   if (!domain) errors.domain = "Domain is required.";
@@ -135,9 +182,37 @@ export function validateInitiativeForm(fields) {
     errors.timelineEnd = "End date must be on or after start date.";
   }
 
-  const invalid = teamIds.filter((t) => !VALID_TEAM_IDS.includes(t));
-  if (invalid.length > 0) {
-    errors.teams = `Teams must be one of: ${VALID_TEAM_IDS.join(", ")}.`;
+  if (teamIds.length > 0 && validTeamIds.length > 0) {
+    const invalid = teamIds.filter((t) => !validTeamIds.includes(t));
+    if (invalid.length > 0) {
+      errors.teams = `Teams must be one of: ${validTeamIds.join(", ")}.`;
+    }
+  }
+
+  if (status && validStatusLabels.length > 0 && !validStatusLabels.includes(status)) {
+    errors.status = `Status must be one of: ${validStatusLabels.join(", ")}.`;
+  }
+
+  return { errors, valid: Object.keys(errors).length === 0 };
+}
+
+const TEAM_ID_PATTERN = /^[a-zA-Z0-9_-]+$/;
+
+export function validateTeamForm({ teamId, teamName, color }) {
+  const errors = {};
+  const id = String(teamId || "").trim();
+  const name = String(teamName || "").trim();
+  const colorVal = String(color || "").trim();
+
+  if (!id) errors.teamId = "Team Id is required.";
+  else if (!TEAM_ID_PATTERN.test(id)) {
+    errors.teamId = "Use letters, numbers, hyphens, or underscores only.";
+  }
+
+  if (!name) errors.teamName = "Team Name is required.";
+
+  if (colorVal && !/^#[0-9A-Fa-f]{6}$/.test(colorVal)) {
+    errors.color = "Color must be a hex value like #8b5cf6.";
   }
 
   return { errors, valid: Object.keys(errors).length === 0 };

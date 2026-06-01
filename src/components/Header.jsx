@@ -6,6 +6,7 @@ export default function Header({
   themePreference,
   onThemeChange,
   onAddClick,
+  onManageTeamsClick,
   googleSheetUrl,
 }) {
   return (
@@ -27,6 +28,12 @@ export default function Header({
       <div className="roadmap__header-actions">
         {onThemeChange ? (
           <ThemeSwitcher preference={themePreference} onChange={onThemeChange} />
+        ) : null}
+        {onManageTeamsClick ? (
+          <button type="button" className="roadmap__teams-btn" onClick={onManageTeamsClick}>
+            <span className="roadmap__add-btn-label roadmap__add-btn-label--full">Manage teams</span>
+            <span className="roadmap__add-btn-label roadmap__add-btn-label--short">Teams</span>
+          </button>
         ) : null}
         {onAddClick ? (
           <button type="button" className="roadmap__add-btn" onClick={onAddClick}>

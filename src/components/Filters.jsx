@@ -144,20 +144,31 @@ function getTeamFilterDefinitions(data) {
   return data.cohorts || [];
 }
 
+function getStatusFilterDefinitions(data) {
+  const defs = data.statuses;
+  if (Array.isArray(defs) && defs.length > 0 && defs[0]?.label) {
+    return defs;
+  }
+  return [];
+}
+
 export default function Filters({
   data,
   filterState,
   onDomainChange,
   onInitiativeChange,
   onTeamsChange,
+  onStatusesChange,
   onClear,
 }) {
   const domains = getDomainsForFilter(data);
   const initiatives = getAllInitiatives(data);
   const teamFilters = getTeamFilterDefinitions(data);
+  const statusFilters = getStatusFilterDefinitions(data);
   const filterActive = isFilterActive(filterState);
   const selectedInitiativeId = getSelectedInitiativeId(filterState);
   const selectedTeams = filterState.teams;
+  const selectedStatuses = filterState.statuses;
 
   const handleTeamPillClick = (teamId) => {
     if (teamId === "all") {
@@ -171,6 +182,20 @@ export default function Filters({
       next.add(teamId);
     }
     onTeamsChange(next.size > 0 ? next : null);
+  };
+
+  const handleStatusPillClick = (statusLabel) => {
+    if (statusLabel === "all") {
+      onStatusesChange(null);
+      return;
+    }
+    const next = new Set(selectedStatuses || []);
+    if (next.has(statusLabel)) {
+      next.delete(statusLabel);
+    } else {
+      next.add(statusLabel);
+    }
+    onStatusesChange(next.size > 0 ? next : null);
   };
 
   const clearFiltersButton = (
@@ -222,6 +247,25 @@ export default function Filters({
               teamActive={selectedTeams?.has(team.id)}
               dotColor={team.color}
               onClick={() => handleTeamPillClick(team.id)}
+            />
+          ))}
+        </FilterRow>
+      )}
+
+      {statusFilters.length > 0 && (
+        <FilterRow labelText="Status:">
+          <FilterPill
+            label="All statuses"
+            teamActive={!selectedStatuses || selectedStatuses.size === 0}
+            onClick={() => handleStatusPillClick("all")}
+          />
+          {statusFilters.map((status) => (
+            <FilterPill
+              key={status.id}
+              label={status.label}
+              teamActive={selectedStatuses?.has(status.label)}
+              dotColor={status.color}
+              onClick={() => handleStatusPillClick(status.label)}
             />
           ))}
         </FilterRow>

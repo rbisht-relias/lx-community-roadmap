@@ -126,7 +126,15 @@ Complete these steps once per spreadsheet. The script must be **bound** to the s
 ### Step 1 — Create the spreadsheet and tabs
 
 1. Create a new Google Spreadsheet (or use an existing one).
-2. Add one tab per team. Example tab names and how they appear in the app:
+2. Add an **App Config** tab (first tab recommended) with these headers in row 1:
+
+   | A         | B       | C (optional) |
+   |-----------|---------|--------------|
+   | Team Name | Team Id | Color        |
+
+   Example rows: `Team 1` / `t1`, `Team 2` / `t2`. These drive the **Team:** filter pills and the add-initiative checkboxes. You can also add or remove teams from the app via **Manage teams** (admin token required).
+
+3. Add one tab per **domain** (roadmap row). Example tab names and how they appear in the app:
 
    | Tab name (sheet) | Team key in app |
    |------------------|-----------------|
@@ -144,13 +152,13 @@ On **each** team tab, set **row 1** to these headers (exact names recommended):
 
 | A   | B    | C             | D               | E             | F     | G      |
 |-----|------|---------------|-----------------|---------------|-------|--------|
-| ID  | Name | Description   | Timeline Start  | Timeline End  | Color | Cohort |
+| ID  | Name | Description   | Timeline Start  | Timeline End  | Color | Teams |
 
 - **Data rows** start at row 2.
 - **ID** — unique per tab (e.g. `PLAT-101`).
 - **Timeline Start / End** — `YYYY-MM-DD` (e.g. `2026-04-01`). Date cells are formatted by the script.
 - **Color** — optional hex, e.g. `#f97316`.
-- **Cohort** — optional cohort id (default setup: `c1`–`c4`). See [Adding a cohort](#adding-a-cohort-step-by-step) to add more.
+- **Teams** — optional team ids from App Config (comma-separated, e.g. `t1,t2`).
 
 Tabs without this header row are ignored. Empty ID cells are skipped.
 

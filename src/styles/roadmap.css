@@ -1,6 +1,10 @@
 :root {
   --label-width: 140px;
   --quarter-min: 120px;
+  --initiative-bar-height: 40px;
+  --initiative-lane-gap: 12px;
+  --initiative-lane-step: calc(var(--initiative-bar-height) + var(--initiative-lane-gap));
+  --initiative-track-padding-y: 12px;
 }
 
 html[data-theme="dark"] {
@@ -202,9 +206,25 @@ body {
   box-shadow: 0 1px 2px var(--shadow);
 }
 
-.roadmap__add-btn:hover {
+.roadmap__add-btn:hover,
+.roadmap__teams-btn:hover {
   border-color: var(--accent);
   background: var(--btn-hover-bg);
+}
+
+.roadmap__teams-btn {
+  flex-shrink: 0;
+  padding: 8px 14px;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--text);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  transition:
+    border-color 0.15s,
+    background 0.15s;
 }
 
 .roadmap__title {
@@ -581,16 +601,37 @@ body {
 
 .roadmap__track {
   display: grid;
-  gap: 6px;
-  padding: 8px;
+  grid-template-columns: subgrid;
+  padding: 0;
   min-height: 60px;
   border-bottom: 1px solid var(--border);
+  background: var(--bg);
+}
+
+.roadmap__track-canvas {
+  position: relative;
+  grid-column: 1 / -1;
+  padding: var(--initiative-track-padding-y) 0;
+  min-height: calc(
+    2 * var(--initiative-track-padding-y) + var(--lane-count, 1) *
+      var(--initiative-lane-step) - var(--initiative-lane-gap)
+  );
+  isolation: isolate;
+}
+
+.roadmap__track-canvas::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
   background: repeating-linear-gradient(
     to right,
     transparent,
-    transparent calc(100% / var(--quarter-count) - 1px),
-    var(--border) calc(100% / var(--quarter-count) - 1px),
-    var(--border) calc(100% / var(--quarter-count))
+    transparent calc((100% - (var(--quarter-count) - 1) * 1px) / var(--quarter-count)),
+    var(--border) calc((100% - (var(--quarter-count) - 1) * 1px) / var(--quarter-count)),
+    var(--border)
+      calc((100% - (var(--quarter-count) - 1) * 1px) / var(--quarter-count) + 1px)
   );
 }
 
@@ -599,29 +640,38 @@ body {
 }
 
 .initiative {
-  position: relative;
-  margin-inline-end: 8px;
-  padding: 8px 10px;
+  position: absolute;
+  z-index: 1;
+  top: calc(
+    var(--initiative-track-padding-y) + var(--lane, 0) * var(--initiative-lane-step)
+  );
+  box-sizing: border-box;
+  height: var(--initiative-bar-height);
+  min-width: 2.5rem;
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
   border-radius: 6px;
   font-size: 0.8rem;
   font-weight: 500;
   color: var(--text);
   border: 1px solid transparent;
   border-top: 3px solid var(--accent, #3b82f6);
-  background: color-mix(in srgb, var(--accent, #3b82f6) 22%, transparent);
+  background: color-mix(in srgb, var(--accent, #3b82f6) 22%, var(--bg));
   cursor: pointer;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  opacity: 1;
   transition:
-    opacity 0.2s ease,
     border-color 0.2s ease,
-    box-shadow 0.2s ease;
+    box-shadow 0.2s ease,
+    background 0.2s ease;
 }
 
 .initiative--dimmed {
-  opacity: 0.3;
+  background: color-mix(in srgb, var(--accent, #3b82f6) 8%, var(--bg));
+  color: color-mix(in srgb, var(--text) 35%, var(--bg));
+  border: none;
 }
 
 .initiative--matched {
@@ -687,6 +737,73 @@ body {
   display: block;
   font-size: 0.75rem;
   line-height: 1.45;
+  color: var(--text-muted);
+}
+
+.initiative-tooltip__status-label {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.initiative-tooltip__status-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.initiative-tooltip__status-field-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.initiative-tooltip__status-select {
+  width: 100%;
+  min-height: 36px;
+  padding: 8px 36px 8px 12px;
+  font-size: 0.8125rem;
+  font-family: inherit;
+  line-height: 1.25;
+  color: var(--text);
+  background-color: var(--surface);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%239ca3af' d='M3 4.5 6 8 9 4.5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  transition:
+    border-color 0.15s ease,
+    background-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.initiative-tooltip__status-select:hover {
+  border-color: var(--border-hover);
+  background-color: var(--surface-hover);
+}
+
+.initiative-tooltip__status-select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+  background-color: var(--bg-elevated);
+}
+
+html[data-theme="dark"] .initiative-tooltip__status-select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%239aa0a6' d='M3 4.5 6 8 9 4.5'/%3E%3C/svg%3E");
+}
+
+.initiative-tooltip__status-saving {
+  font-size: 0.72rem;
   color: var(--text-muted);
 }
 
@@ -1312,6 +1429,73 @@ select.admin-field__input {
   accent-color: var(--accent, #3b82f6);
 }
 
+.admin-modal__panel--teams {
+  width: min(480px, 100vw);
+}
+
+.admin-teams-form__heading {
+  margin: 20px 0 12px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.admin-teams-form__heading:first-of-type {
+  margin-top: 8px;
+}
+
+.admin-teams-form__submit {
+  width: 100%;
+  margin-top: 4px;
+}
+
+.admin-teams-list__items {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.admin-teams-list__item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.admin-teams-list__dot {
+  flex-shrink: 0;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.admin-teams-list__text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.admin-teams-list__name {
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.admin-teams-list__id {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.admin-teams-list__delete {
+  flex-shrink: 0;
+  color: var(--error);
+}
+
 .admin-btn {
   padding: 8px 16px;
   font-size: 0.8125rem;
@@ -1406,7 +1590,8 @@ select.admin-field__input {
     font-size: 0.7rem;
   }
 
-  .roadmap__add-btn {
+  .roadmap__add-btn,
+  .roadmap__teams-btn {
     justify-content: center;
     white-space: nowrap;
     padding: 8px 12px;
@@ -1426,7 +1611,8 @@ select.admin-field__input {
     grid-template-columns: 1fr;
   }
 
-  .roadmap__add-btn {
+  .roadmap__add-btn,
+  .roadmap__teams-btn {
     width: 100%;
   }
 }

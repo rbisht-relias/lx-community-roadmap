@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { applyStatusToInitiative } from "../config/statusConfig";
 import { fetchRoadmap } from "../services/sheetsApi";
 import { setQuartersFromData } from "../utils/roadmapUtils";
 
@@ -41,5 +42,21 @@ export function useRoadmapData() {
     return load(controller.signal);
   }, [load]);
 
-  return { data, quarters, loading, error, refetch };
+  const patchInitiative = useCallback((domain, initiativeId, updates) => {
+    setData((prev) => {
+      if (!prev || !domain) return prev;
+      const rows = prev[domain];
+      if (!Array.isArray(rows)) return prev;
+      const statusDefs = prev.statuses?.length ? prev.statuses : undefined;
+      return {
+        ...prev,
+        [domain]: rows.map((item) => {
+          if (item.id !== initiativeId) return item;
+          return applyStatusToInitiative({ ...item, ...updates }, statusDefs);
+        }),
+      };
+    });
+  }, []);
+
+  return { data, quarters, loading, error, refetch, patchInitiative };
 }
