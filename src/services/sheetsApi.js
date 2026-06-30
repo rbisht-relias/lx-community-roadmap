@@ -51,6 +51,58 @@ function resolveTeamFilterDefinitions(payload) {
   return ROADMAP_DEFAULTS.teams;
 }
 
+/**
+ * Accepts a FLAT remote payload (easy to produce from SharePoint/Power Automate):
+ *   { projects:[{domain,id,name,description,timelineStart,timelineEnd,status,
+ *                teams,owner,priority,link,progress}],
+ *     teams:[{id,label,color}], domains:[{id,name}],
+ *     statuses:[{id,label,color}], priorities:[{id,label,color}] }
+ * and reshapes it into the nested form the UI expects. If the payload is already
+ * nested (legacy/Apps Script), it is returned unchanged.
+ */
+export function normalizeRemotePayload(payload) {
+  if (!payload || !Array.isArray(payload.projects)) return payload;
+
+  const out = {
+    teams: payload.teams || [],
+    statuses: payload.statuses || [],
+    priorities: payload.priorities || [],
+  };
+
+  (payload.domains || []).forEach((d) => {
+    const key = String(d.id || d.name || "").trim().toLowerCase();
+    if (key) out[key] = [];
+  });
+
+  payload.projects.forEach((p) => {
+    const domain = String(p.domain || "").trim().toLowerCase();
+    if (!domain) return;
+    if (!out[domain]) out[domain] = [];
+    out[domain].push({
+      id: String(p.id || "").trim(),
+      name: p.name || "",
+      description: p.description || "",
+      timeline: [
+        p.timelineStart || p.start || p.timeline?.[0] || "",
+        p.timelineEnd || p.end || p.timeline?.[1] || "",
+      ],
+      status: p.status || "",
+      teams: Array.isArray(p.teams)
+        ? p.teams
+        : String(p.teams || "")
+            .split(/[,;]/)
+            .map((t) => t.trim())
+            .filter(Boolean),
+      owner: p.owner || "",
+      priority: p.priority || "",
+      link: p.link || "",
+      progress: Number(p.progress) || 0,
+    });
+  });
+
+  return out;
+}
+
 export function mergeRoadmapData(sheetPayload) {
   const payload = sheetPayload || {};
   const sheetData = { ...payload };
@@ -108,7 +160,7 @@ export async function fetchRoadmap() {
 
   const res = await fetch(apiUrl);
   const payload = await parseJsonResponse(res);
-  return mergeRoadmapData(payload);
+  return mergeRoadmapData(normalizeRemotePayload(payload));
 }
 
 async function postToSheetsApi(payload) {
@@ -138,7 +190,7 @@ async function postToSheetsApi(payload) {
 }
 
 export async function addInitiative(payload) {
-  return postToSheetsApi(payload);
+  return postToSheetsApi({ ...payload, action: "add" });
 }
 
 export async function updateInitiative(payload) {
