@@ -8,7 +8,6 @@ import {
   setStoredAdminToken,
 } from "./utils/adminAuth";
 import Sidebar from "./components/Sidebar";
-import DeleteOverlay from "./components/DeleteOverlay";
 import LoadingScreen from "./components/LoadingScreen";
 import Filters from "./components/Filters";
 import RoadmapGrid from "./components/RoadmapGrid";
@@ -22,6 +21,8 @@ import { useRoadmapData } from "./hooks/useRoadmapData";
 import { useTheme } from "./hooks/useTheme";
 import { resolveStatus } from "./config/statusConfig";
 import {
+  addInitiative,
+  updateInitiative,
   deleteInitiative,
   getTeamOptionsForAdmin,
   getValidTeamIds,
@@ -47,6 +48,25 @@ const VIEW_TITLES = {
 const VIEW_STORAGE_KEY = "roadmap_active_view";
 const SIDEBAR_STORAGE_KEY = "roadmap_sidebar_collapsed";
 
+/** Turn an Add/Edit form payload into a roadmap item (for optimistic insert). */
+function formPayloadToItem(payload) {
+  return {
+    id: String(payload.id || "").trim(),
+    name: payload.name || "",
+    description: payload.description || "",
+    timeline: [payload.timelineStart || "", payload.timelineEnd || ""],
+    status: payload.status || "",
+    owner: payload.owner || "",
+    priority: payload.priority || "",
+    link: payload.link || "",
+    teams: String(payload.teams || "")
+      .split(/[,;]/)
+      .map((t) => t.trim())
+      .filter(Boolean),
+    progress: Number(payload.progress) || 0,
+  };
+}
+
 function getInitialView() {
   try {
     const saved = localStorage.getItem(VIEW_STORAGE_KEY);
@@ -67,7 +87,8 @@ function getInitialCollapsed() {
 
 export default function App() {
   const { preference: themePreference, setThemePreference } = useTheme();
-  const { data, quarters, loading, error, refetch, patchInitiative } = useRoadmapData();
+  const { data, quarters, loading, error, revalidating, refetch, patchInitiative, applyRoadmap } =
+    useRoadmapData();
   const [loaderVisible, setLoaderVisible] = useState(true);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(getInitialCollapsed);
   const [view, setView] = useState(getInitialView);
@@ -79,10 +100,19 @@ export default function App() {
   const [addPrefill, setAddPrefill] = useState(null);
   const [editTarget, setEditTarget] = useState(null);
   const [teamsAdminOpen, setTeamsAdminOpen] = useState(false);
-  const [adminToken, setAdminToken] = useState(
-    () => applyAdminTokenFromUrl() || getStoredAdminToken() || (isLocalMode() ? "local" : "")
-  );
-  const [deleteOverlayVisible, setDeleteOverlayVisible] = useState(false);
+  const [adminToken, setAdminToken] = useState(() => {
+    // Priority: explicit ?token= in the URL → configured .env token → any saved
+    // token → local fallback. .env wins over stale sessionStorage so a leftover
+    // test token can't override the real one.
+    const urlToken = applyAdminTokenFromUrl();
+    if (urlToken) return urlToken;
+    const envToken = (import.meta.env.VITE_ADMIN_TOKEN || "").trim();
+    if (envToken) {
+      clearStoredAdminTokens(); // drop any stale stored token so it can't resurface
+      return envToken;
+    }
+    return getStoredAdminToken() || (isLocalMode() ? "local" : "");
+  });
 
   const handleAdminUnlock = useCallback((token) => {
     const trimmed = String(token || "").trim();
@@ -148,35 +178,88 @@ export default function App() {
     clearHideTooltipTimer();
   }, [clearHideTooltipTimer]);
 
-  const handleDeleteStart = useCallback(() => {
-    setDeleteOverlayVisible(true);
-  }, []);
-
-  const handleDeleteError = useCallback(() => {
-    setDeleteOverlayVisible(false);
-  }, []);
-
+  // Optimistic delete: remove from screen + cache instantly, write in background.
   const handleDeleteInitiative = useCallback(
     async ({ team, id }) => {
-      if (!adminToken) {
-        throw new Error("Admin token required to delete initiatives.");
+      if (!data) return;
+      const domain = String(team || "").trim().toLowerCase();
+      const snapshot = data;
+      const next = {
+        ...data,
+        [domain]: (data[domain] || []).filter((p) => p.id !== id),
+      };
+      applyRoadmap(next);
+      try {
+        await deleteInitiative({ adminToken, team: domain, id });
+        refetch();
+      } catch (err) {
+        applyRoadmap(snapshot); // roll back
+        window.alert(err.message || "Failed to delete. Restored the item.");
       }
-      await deleteInitiative({ adminToken, team, id });
-      window.location.reload();
     },
-    [adminToken]
+    [data, adminToken, applyRoadmap, refetch]
   );
 
   const handleDeleteFromTable = useCallback(
-    async ({ team, id }) => {
+    ({ team, id }) => {
       if (!window.confirm(`Delete "${id}"? This cannot be undone.`)) return;
-      try {
-        await handleDeleteInitiative({ team, id });
-      } catch (err) {
-        window.alert(err.message || "Failed to delete.");
-      }
+      handleDeleteInitiative({ team, id });
     },
     [handleDeleteInitiative]
+  );
+
+  // Optimistic add: show the new item immediately, POST in the background.
+  const handleOptimisticAdd = useCallback(
+    (payload) => {
+      if (!data) return;
+      const domain = String(payload.team || "").trim().toLowerCase();
+      const snapshot = data;
+      const next = {
+        ...data,
+        [domain]: [...(data[domain] || []), formPayloadToItem(payload)],
+      };
+      applyRoadmap(next);
+      setAdminOpen(false);
+      setAddPrefill(null);
+      (async () => {
+        try {
+          await addInitiative(payload);
+          refetch();
+        } catch (err) {
+          applyRoadmap(snapshot);
+          window.alert(err.message || "Could not add. Reverted.");
+        }
+      })();
+    },
+    [data, applyRoadmap, refetch]
+  );
+
+  // Optimistic edit: apply changes immediately, PUT in the background.
+  const handleOptimisticUpdate = useCallback(
+    (payload) => {
+      if (!data) return;
+      const domain = String(payload.team || "").trim().toLowerCase();
+      const snapshot = data;
+      const updated = formPayloadToItem(payload);
+      const next = {
+        ...data,
+        [domain]: (data[domain] || []).map((p) =>
+          p.id === updated.id ? { ...p, ...updated } : p
+        ),
+      };
+      applyRoadmap(next);
+      setEditTarget(null);
+      (async () => {
+        try {
+          await updateInitiative(payload);
+          refetch();
+        } catch (err) {
+          applyRoadmap(snapshot);
+          window.alert(err.message || "Could not save changes. Reverted.");
+        }
+      })();
+    },
+    [data, applyRoadmap, refetch]
   );
 
   const handleAdminSuccess = useCallback(() => {
@@ -297,7 +380,6 @@ export default function App() {
 
   return (
     <div className="app">
-      {deleteOverlayVisible ? <DeleteOverlay /> : null}
 
       <Sidebar
         view={view}
@@ -324,7 +406,14 @@ export default function App() {
               </svg>
             </button>
             <div>
-              <h1 className="app__page-title">{pageTitle}</h1>
+              <h1 className="app__page-title">
+                {pageTitle}
+                {revalidating ? (
+                  <span className="app__sync" title="Syncing with Google Sheets…">
+                    Syncing…
+                  </span>
+                ) : null}
+              </h1>
               {subtitle ? <p className="app__page-subtitle">{subtitle}</p> : null}
             </div>
           </div>
@@ -344,7 +433,12 @@ export default function App() {
             ) : view === "sites" ? (
               <SitesView adminUnlocked={adminUnlocked} />
             ) : view === "settings" ? (
-              <SettingsView onChange={refetch} />
+              <SettingsView
+                data={data}
+                adminToken={adminToken}
+                applyRoadmap={applyRoadmap}
+                refetch={refetch}
+              />
             ) : (
               <>
                 {showFilters ? (
@@ -414,8 +508,6 @@ export default function App() {
         onStatusChange={canEditStatus ? handleStatusChange : undefined}
         onEdit={canEditStatus ? handleEditInitiative : undefined}
         onDelete={canDeleteInitiatives ? handleDeleteInitiative : undefined}
-        onDeleteStart={canDeleteInitiatives ? handleDeleteStart : undefined}
-        onDeleteError={canDeleteInitiatives ? handleDeleteError : undefined}
         onTooltipEnter={handleTooltipEnter}
         onTooltipLeave={handleHideTooltip}
       />
@@ -434,7 +526,7 @@ export default function App() {
           onUnlock={handleAdminUnlock}
           onLock={handleAdminLock}
           onClose={handleCloseAdd}
-          onSuccess={handleAdminSuccess}
+          onSave={handleOptimisticAdd}
         />
       ) : null}
 
@@ -453,7 +545,7 @@ export default function App() {
           onUnlock={handleAdminUnlock}
           onLock={handleAdminLock}
           onClose={() => setEditTarget(null)}
-          onSuccess={handleAdminSuccess}
+          onSave={handleOptimisticUpdate}
         />
       ) : null}
 

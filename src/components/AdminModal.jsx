@@ -1,10 +1,6 @@
 import { useCallback, useState } from "react";
 import { formatDomainLabel } from "../utils/roadmapUtils";
-import {
-  addInitiative,
-  updateInitiative,
-  validateInitiativeForm,
-} from "../services/sheetsApi";
+import { validateInitiativeForm } from "../services/sheetsApi";
 
 const EMPTY_FORM = {
   domain: "",
@@ -40,7 +36,7 @@ export default function AdminModal({
   adminToken,
   onUnlock,
   onClose,
-  onSuccess,
+  onSave,
 }) {
   const isEdit = mode === "edit";
   const [tokenInput, setTokenInput] = useState("");
@@ -48,7 +44,6 @@ export default function AdminModal({
   const [form, setForm] = useState(() => buildInitialForm(domains, initialValues));
   const [fieldErrors, setFieldErrors] = useState({});
   const [submitError, setSubmitError] = useState("");
-  const [submitting, setSubmitting] = useState(false);
 
   const handleUnlock = useCallback(
     (e) => {
@@ -100,7 +95,6 @@ export default function AdminModal({
         return;
       }
 
-      setSubmitting(true);
       setSubmitError("");
       const payload = {
         adminToken,
@@ -116,30 +110,12 @@ export default function AdminModal({
         link: form.link.trim(),
         teams: form.teams.join(","),
       };
-      try {
-        if (isEdit) {
-          await updateInitiative(payload);
-        } else {
-          await addInitiative(payload);
-        }
-        onSuccess?.();
-        onClose();
-      } catch (err) {
-        setSubmitError(err.message || "Failed to save.");
-      } finally {
-        setSubmitting(false);
-      }
+      // Hand off to the parent for an optimistic apply + background write,
+      // then close immediately so the user isn't left waiting on the network.
+      onSave?.(payload);
+      onClose();
     },
-    [
-      adminToken,
-      form,
-      isEdit,
-      onClose,
-      onSuccess,
-      validTeamIds,
-      validStatusLabels,
-      validPriorityLabels,
-    ]
+    [adminToken, form, onSave, onClose, validTeamIds, validStatusLabels, validPriorityLabels]
   );
 
   const footer = (content) => (
@@ -432,20 +408,15 @@ export default function AdminModal({
                   type="button"
                   className="admin-btn admin-btn--ghost"
                   onClick={onClose}
-                  disabled={submitting}
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   className="admin-btn admin-btn--primary"
-                  disabled={submitting || (!isEdit && domains.length === 0)}
+                  disabled={!isEdit && domains.length === 0}
                 >
-                  {submitting
-                    ? "Saving…"
-                    : isEdit
-                      ? "Save changes"
-                      : "Add to sheet"}
+                  {isEdit ? "Save changes" : "Add project"}
                 </button>
               </>
             )}

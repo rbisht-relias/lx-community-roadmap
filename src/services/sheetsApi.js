@@ -224,6 +224,40 @@ export async function deleteTeam({ adminToken, teamId }) {
   });
 }
 
+export async function addDomain({ adminToken, name }) {
+  return postToSheetsApi({ action: "addDomain", adminToken, name: String(name || "").trim() });
+}
+
+export async function deleteDomain({ adminToken, id }) {
+  return postToSheetsApi({ action: "deleteDomain", adminToken, id: String(id || "").trim() });
+}
+
+export async function addStatusDef({ adminToken, label, color }) {
+  return postToSheetsApi({
+    action: "addStatus",
+    adminToken,
+    label: String(label || "").trim(),
+    color: String(color || "").trim(),
+  });
+}
+
+export async function deleteStatusDef({ adminToken, label }) {
+  return postToSheetsApi({ action: "deleteStatus", adminToken, label: String(label || "").trim() });
+}
+
+export async function addPriorityDef({ adminToken, label, color }) {
+  return postToSheetsApi({
+    action: "addPriority",
+    adminToken,
+    label: String(label || "").trim(),
+    color: String(color || "").trim(),
+  });
+}
+
+export async function deletePriorityDef({ adminToken, label }) {
+  return postToSheetsApi({ action: "deletePriority", adminToken, label: String(label || "").trim() });
+}
+
 export async function updateInitiativeStatus({ adminToken, team, id, status }) {
   return postToSheetsApi({
     action: "updateStatus",

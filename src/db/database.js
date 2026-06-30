@@ -43,6 +43,10 @@ db.version(2)
     await tx.table("priorities").bulkAdd(SEED_PRIORITIES.map((p) => ({ ...p })));
   });
 
+// v3 adds a cache store (key/value blobs) for the stale-while-revalidate layer
+// used in remote mode — caches the last roadmap payload fetched from Google Sheets.
+db.version(3).stores({ cache: "key" });
+
 function projectKey(domain, id) {
   return `${String(domain).toLowerCase()}::${String(id)}`;
 }
@@ -212,34 +216,41 @@ async function updateStatus(payload) {
   return { ok: true };
 }
 
-async function addTeam(payload) {
-  const teamId = String(payload.teamId || "").trim();
-  if (!teamId) throw new Error("Team Id is required.");
-  if (await db.teams.get(teamId)) throw new Error(`Team Id already exists: ${teamId}`);
-  await db.teams.add({
-    id: teamId,
-    label: String(payload.teamName || teamId).trim(),
-    color: String(payload.color || "").trim() || "#64748b",
-  });
-  return { ok: true };
-}
-
-async function deleteTeam(payload) {
-  const teamId = String(payload.teamId || "").trim().toLowerCase();
-  const projects = await db.projects.toArray();
-  const used = projects.some((p) =>
-    parseTeams(p.teams).some((t) => t.toLowerCase() === teamId)
-  );
-  if (used) throw new Error(`Cannot delete team "${payload.teamId}": it is in use.`);
-  await db.teams.where("id").equalsIgnoreCase(teamId).delete();
-  return { ok: true };
-}
-
 /** Mirror of the remote POST handler; mutates the DB. (Local mode has no auth.) */
 export async function postToLocal(payload) {
   const action = String(payload.action || "add").trim().toLowerCase();
-  if (action === "addteam") return addTeam(payload);
-  if (action === "deleteteam") return deleteTeam(payload);
+  if (action === "addteam") {
+    await createTeam({ name: payload.teamName || payload.label, color: payload.color });
+    return { ok: true };
+  }
+  if (action === "deleteteam") {
+    await deleteTeamById(payload.teamId || payload.id);
+    return { ok: true };
+  }
+  if (action === "adddomain") {
+    await createDomain(payload.name || payload.label);
+    return { ok: true };
+  }
+  if (action === "deletedomain") {
+    await deleteDomain(String(payload.id || "").trim().toLowerCase());
+    return { ok: true };
+  }
+  if (action === "addstatus") {
+    await createStatus({ label: payload.label || payload.name, color: payload.color });
+    return { ok: true };
+  }
+  if (action === "deletestatus") {
+    await deleteStatusDef(slug(payload.id || payload.label));
+    return { ok: true };
+  }
+  if (action === "addpriority") {
+    await createPriority({ label: payload.label || payload.name, color: payload.color });
+    return { ok: true };
+  }
+  if (action === "deletepriority") {
+    await deletePriorityDef(slug(payload.id || payload.label));
+    return { ok: true };
+  }
   if (action === "delete") return deleteProject(payload);
   if (action === "updatestatus") return updateStatus(payload);
   if (action === "update") return updateProject(payload);
@@ -385,4 +396,31 @@ export async function createPriority({ label, color }) {
 
 export async function deletePriorityDef(id) {
   await db.priorities.delete(id);
+}
+
+/* ----------------------- Remote cache (SWR) --------------------------- */
+
+const ROADMAP_CACHE_KEY = "roadmap_payload";
+
+/** Read the last cached roadmap payload (merged shape), or null. */
+export async function getCachedRoadmap() {
+  try {
+    const row = await db.cache.get(ROADMAP_CACHE_KEY);
+    return row?.value ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** Store the latest roadmap payload fetched from the remote source. */
+export async function cacheRoadmap(payload) {
+  try {
+    await db.cache.put({
+      key: ROADMAP_CACHE_KEY,
+      value: payload,
+      cachedAt: new Date().toISOString(),
+    });
+  } catch {
+    /* ignore quota / private-mode errors */
+  }
 }
