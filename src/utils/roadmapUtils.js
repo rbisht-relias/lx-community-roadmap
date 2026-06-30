@@ -1,6 +1,13 @@
 import { applyStatusToInitiative, DEFAULT_STATUSES } from "../config/statusConfig";
 
-export const RESERVED_DATA_KEYS = new Set(["meta", "quarters", "teams", "cohorts", "statuses"]);
+export const RESERVED_DATA_KEYS = new Set([
+  "meta",
+  "quarters",
+  "teams",
+  "cohorts",
+  "statuses",
+  "priorities",
+]);
 export const DEFAULT_INITIATIVE_COLOR = "#64748b";
 
 function getStatusDefinitions(data) {
@@ -62,6 +69,15 @@ export function initiativeMatchesStatusFilter(item, selectedStatuses) {
   if (!status) return false;
   return [...selectedStatuses].some(
     (label) => label.toLowerCase() === status.toLowerCase()
+  );
+}
+
+export function initiativeMatchesPriorityFilter(item, selectedPriorities) {
+  if (!selectedPriorities || selectedPriorities.size === 0) return true;
+  const priority = String(item?.priority || "").trim();
+  if (!priority) return false;
+  return [...selectedPriorities].some(
+    (label) => label.toLowerCase() === priority.toLowerCase()
   );
 }
 
@@ -348,6 +364,7 @@ export function initiativeMatchesFilter(item, category, filterState) {
   }
   if (!initiativeMatchesTeamsFilter(item, filterState.teams)) return false;
   if (!initiativeMatchesStatusFilter(item, filterState.statuses)) return false;
+  if (!initiativeMatchesPriorityFilter(item, filterState.priorities)) return false;
   return true;
 }
 
@@ -364,7 +381,8 @@ export function isFilterActive(filterState) {
     filterState.domain !== "all" ||
     (filterState.initiatives && filterState.initiatives.size > 0) ||
     (filterState.teams && filterState.teams.size > 0) ||
-    (filterState.statuses && filterState.statuses.size > 0)
+    (filterState.statuses && filterState.statuses.size > 0) ||
+    (filterState.priorities && filterState.priorities.size > 0)
   );
 }
 
@@ -393,4 +411,5 @@ export const INITIAL_FILTER_STATE = {
   initiatives: null,
   teams: null,
   statuses: null,
+  priorities: null,
 };

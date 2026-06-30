@@ -57,7 +57,7 @@ flowchart LR
 
 1. **Read path** — On load, the app calls `VITE_SHEETS_API_URL` (your deployed Web App URL). Apps Script scans every sheet in the bound spreadsheet. Any tab whose row 1 matches the roadmap headers is included; the tab name becomes the team key (lowercased, e.g. `Relias` → `relias`).
 2. **Display** — `useRoadmapData` merges the JSON with defaults, computes quarters from date ranges, and renders filters plus `RoadmapGrid` bars.
-3. **Write path** — With a valid admin token (modal or `?token=YOUR_TOKEN` in the URL), you can **add** initiatives via `AdminModal` or **delete** them from the initiative tooltip (**Delete from sheet**). POST requests include `adminToken`; Apps Script validates the token, then appends or deletes a row on the matching team tab by ID.
+3. **Write path** — With a valid admin token (modal or `?token=YOUR_TOKEN` in the URL), you can **add**, **edit**, and **delete** initiatives entirely from the UI. Add uses `AdminModal`; **Edit** opens the same modal pre-filled from the initiative tooltip (Domain and ID are locked since they identify the row); **Delete** is also on the tooltip. POST requests include `adminToken` and an `action` (`add` / `update` / `delete` / `updateStatus`); Apps Script validates the token, then appends, updates, or deletes a row on the matching team tab by ID.
 4. **Build** — `VITE_SHEETS_API_URL` is injected at compile time. Local dev uses `.env`; GitHub Actions uses the `VITE_SHEETS_API_URL` repository secret.
 
 There is no local `data.json`; the Sheets Web App is required for the app to load data.
@@ -150,15 +150,20 @@ Complete these steps once per spreadsheet. The script must be **bound** to the s
 
 On **each** team tab, set **row 1** to these headers (exact names recommended):
 
-| A   | B    | C             | D               | E             | F     | G      |
-|-----|------|---------------|-----------------|---------------|-------|--------|
-| ID  | Name | Description   | Timeline Start  | Timeline End  | Color | Teams |
+| A   | B    | C             | D               | E             | F      | G     | H     | I        | J    |
+|-----|------|---------------|-----------------|---------------|--------|-------|-------|----------|------|
+| ID  | Name | Description   | Timeline Start  | Timeline End  | Status | Teams | Owner | Priority | Link |
 
 - **Data rows** start at row 2.
 - **ID** — unique per tab (e.g. `PLAT-101`).
 - **Timeline Start / End** — `YYYY-MM-DD` (e.g. `2026-04-01`). Date cells are formatted by the script.
-- **Color** — optional hex, e.g. `#f97316`.
+- **Status** — optional; one of the status dropdown values (`In Progress`, `Close to done`, `At Risk`, `Done`, `Future`, `Paused`). Drives the bar color. (A `Color` header with a hex value is still accepted here for backwards compatibility.)
 - **Teams** — optional team ids from App Config (comma-separated, e.g. `t1,t2`).
+- **Owner** — optional free-text name of the person/team responsible (e.g. `Jane D.`).
+- **Priority** — optional; one of `High`, `Medium`, `Low`. Shown as a color-coded badge and available as a filter.
+- **Link** — optional URL (must start with `http://` or `https://`); rendered as a clickable link in the initiative tooltip.
+
+Headers are matched by name, not position — extra columns can be reordered, but keeping **Teams** in column G is recommended (the team-usage check reads that column directly). Owner/Priority/Link are optional; existing rows left blank simply show nothing for those fields.
 
 Tabs without this header row are ignored. Empty ID cells are skipped.
 

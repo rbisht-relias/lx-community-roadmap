@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { formatTimelineRange } from "../utils/roadmapUtils";
+import { resolvePriority } from "../config/priorityConfig";
 
 function positionTooltip(tooltipEl, target) {
   const rect = target.getBoundingClientRect();
@@ -24,9 +25,12 @@ export default function InitiativeTooltip({
   target,
   domain,
   statuses = [],
+  priorities = [],
   canEditStatus,
+  canEdit,
   canDelete,
   onStatusChange,
+  onEdit,
   onDelete,
   onDeleteStart,
   onDeleteError,
@@ -103,7 +107,7 @@ export default function InitiativeTooltip({
   const displayStatus = localStatus || item?.status || "";
 
   const visible = Boolean(item && target);
-  const interactive = visible && (canDelete || canEditStatus);
+  const interactive = visible && (canDelete || canEditStatus || canEdit);
 
   return (
     <div
@@ -128,11 +132,39 @@ export default function InitiativeTooltip({
               {formatTimelineRange(item.timeline)}
             </span>
           ) : null}
-          {displayStatus ? (
-            <span className="initiative-tooltip__status-label">{displayStatus}</span>
+          <div className="initiative-tooltip__badges">
+            {displayStatus ? (
+              <span className="initiative-tooltip__status-label">{displayStatus}</span>
+            ) : null}
+            {item.priority
+              ? (() => {
+                  const p = resolvePriority(item.priority, priorities);
+                  return (
+                    <span
+                      className="initiative-tooltip__priority"
+                      style={{ "--priority-color": p.color }}
+                    >
+                      {p.label}
+                    </span>
+                  );
+                })()
+              : null}
+          </div>
+          {item.owner ? (
+            <span className="initiative-tooltip__owner">Owner: {item.owner}</span>
           ) : null}
           {item.description ? (
             <span className="initiative-tooltip__desc">{item.description}</span>
+          ) : null}
+          {item.link ? (
+            <a
+              className="initiative-tooltip__link"
+              href={item.link}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Open link ↗
+            </a>
           ) : null}
           {canEditStatus && statuses.length > 0 ? (
             <label className="initiative-tooltip__status-field">
@@ -154,16 +186,30 @@ export default function InitiativeTooltip({
               ) : null}
             </label>
           ) : null}
-          {canDelete ? (
+          {canEdit || canDelete ? (
             <div className="initiative-tooltip__actions">
-              <button
-                type="button"
-                className="initiative-tooltip__delete"
-                disabled={deleting}
-                onClick={handleDelete}
-              >
-                {deleting ? "Deleting…" : "Delete"}
-              </button>
+              {canEdit ? (
+                <button
+                  type="button"
+                  className="initiative-tooltip__edit"
+                  disabled={deleting}
+                  onClick={() =>
+                    item && domain && onEdit?.({ domain, item })
+                  }
+                >
+                  Edit
+                </button>
+              ) : null}
+              {canDelete ? (
+                <button
+                  type="button"
+                  className="initiative-tooltip__delete"
+                  disabled={deleting}
+                  onClick={handleDelete}
+                >
+                  {deleting ? "Deleting…" : "Delete"}
+                </button>
+              ) : null}
               {deleteError ? (
                 <span className="initiative-tooltip__error">{deleteError}</span>
               ) : null}

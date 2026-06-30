@@ -33,6 +33,13 @@ var STATUS_DEFINITIONS = [
 
 var DEFAULT_STATUS_COLOR = '#64748b';
 
+/** Priority dropdown values and badge colors (Priority column on initiative tabs). */
+var PRIORITY_DEFINITIONS = [
+  { label: 'High', color: '#ef4444' },
+  { label: 'Medium', color: '#f59e0b' },
+  { label: 'Low', color: '#38bdf8' },
+];
+
 /** Temporary dev token — replace via Script property ADMIN_TOKEN before production. */
 var DEFAULT_ADMIN_TOKEN = 'relias-2026';
 
@@ -69,6 +76,9 @@ function doPost(e) {
     if (action === 'updatestatus') {
       return jsonResponse(updateInitiativeStatus_(body));
     }
+    if (action === 'update') {
+      return jsonResponse(updateInitiative_(body));
+    }
     var result = appendInitiative_(body);
     return jsonResponse(result);
   } catch (err) {
@@ -81,6 +91,7 @@ function readRoadmap_() {
   var out = {};
   out.teams = readTeamsFromAppConfig_();
   out.statuses = getStatusDefinitions_();
+  out.priorities = getPriorityDefinitions_();
   var sheets = ss.getSheets();
   for (var i = 0; i < sheets.length; i++) {
     var sheet = sheets[i];
@@ -456,6 +467,26 @@ function validateStatusLabel_(status) {
   throw new Error('Status must be one of: ' + labels.join(', ') + '.');
 }
 
+function getPriorityDefinitions_() {
+  return PRIORITY_DEFINITIONS.map(function (p) {
+    return { id: p.label, label: p.label, color: p.color };
+  });
+}
+
+function validatePriorityLabel_(priority) {
+  if (!priority) return '';
+  var key = normalizeStatusKey_(priority);
+  for (var i = 0; i < PRIORITY_DEFINITIONS.length; i++) {
+    if (normalizeStatusKey_(PRIORITY_DEFINITIONS[i].label) === key) {
+      return PRIORITY_DEFINITIONS[i].label;
+    }
+  }
+  var labels = PRIORITY_DEFINITIONS.map(function (p) {
+    return p.label;
+  });
+  throw new Error('Priority must be one of: ' + labels.join(', ') + '.');
+}
+
 function getRoadmapColumnMap_(sheet) {
   var lastCol = sheet.getLastColumn();
   var colCount = Math.max(lastCol, 7);
@@ -470,6 +501,9 @@ function getRoadmapColumnMap_(sheet) {
     endCol: 5,
     statusCol: 6,
     teamsCol: 7,
+    ownerCol: 8,
+    priorityCol: 9,
+    linkCol: 10,
   };
 
   for (var c = 0; c < h.length; c++) {
@@ -483,6 +517,9 @@ function getRoadmapColumnMap_(sheet) {
       map.endCol = col;
     } else if (h[c] === 'status') map.statusCol = col;
     else if (h[c] === 'teams' || h[c] === 'team' || h[c] === 'cohort') map.teamsCol = col;
+    else if (h[c] === 'owner') map.ownerCol = col;
+    else if (h[c] === 'priority') map.priorityCol = col;
+    else if (h[c] === 'link' || h[c] === 'links' || h[c] === 'url') map.linkCol = col;
     else if (h[c] === 'color' && map.statusCol === 6) map.statusCol = col;
   }
 
@@ -493,7 +530,16 @@ function readSheetRows_(sheet) {
   var lastRow = sheet.getLastRow();
   if (lastRow < 2) return [];
   var map = getRoadmapColumnMap_(sheet);
-  var lastCol = Math.max(map.teamsCol, map.statusCol, map.endCol);
+  var lastCol = Math.max(
+    map.teamsCol,
+    map.statusCol,
+    map.endCol,
+    map.ownerCol,
+    map.priorityCol,
+    map.linkCol
+  );
+  // Never request beyond the sheet's grid (extra cols may not exist on older tabs).
+  lastCol = Math.min(lastCol, sheet.getMaxColumns());
   var values = sheet.getRange(2, 1, lastRow, lastCol).getValues();
   var items = [];
   for (var r = 0; r < values.length; r++) {
@@ -517,6 +563,12 @@ function readSheetRows_(sheet) {
     if (teams.length) {
       item.teams = teams;
     }
+    var owner = String(row[map.ownerCol - 1] || '').trim();
+    if (owner) item.owner = owner;
+    var priority = String(row[map.priorityCol - 1] || '').trim();
+    if (priority) item.priority = priority;
+    var link = String(row[map.linkCol - 1] || '').trim();
+    if (link) item.link = link;
     items.push(item);
   }
   return items;
@@ -604,6 +656,9 @@ function appendInitiative_(body) {
   var timelineEnd = String(body.timelineEnd || '').trim();
   var statusInput = String(body.status || '').trim();
   var teamIds = readTeamsFromBody_(body);
+  var owner = String(body.owner || '').trim();
+  var priorityInput = String(body.priority || '').trim();
+  var link = String(body.link || '').trim();
 
   if (!domain) throw new Error('Domain is required.');
   if (!id) throw new Error('ID is required.');
@@ -618,6 +673,10 @@ function appendInitiative_(body) {
   var statusValue = '';
   if (statusInput) {
     statusValue = validateStatusLabel_(statusInput);
+  }
+  var priorityValue = validatePriorityLabel_(priorityInput);
+  if (link && !/^https?:\/\//i.test(link)) {
+    throw new Error('Link must start with http:// or https://');
   }
 
   var sheetName = sheetNameFromDomainKey_(domain);
@@ -636,7 +695,13 @@ function appendInitiative_(body) {
   }
 
   var row = [];
-  var maxCol = Math.max(map.teamsCol, map.statusCol);
+  var maxCol = Math.max(
+    map.teamsCol,
+    map.statusCol,
+    map.ownerCol,
+    map.priorityCol,
+    map.linkCol
+  );
   for (var c = 1; c <= maxCol; c++) {
     row.push('');
   }
@@ -647,7 +712,76 @@ function appendInitiative_(body) {
   row[map.endCol - 1] = timelineEnd;
   row[map.statusCol - 1] = statusValue;
   row[map.teamsCol - 1] = formatTeamsCell_(teamIds);
+  row[map.ownerCol - 1] = owner;
+  row[map.priorityCol - 1] = priorityValue;
+  row[map.linkCol - 1] = link;
   sheet.appendRow(row);
+
+  return { ok: true };
+}
+
+function updateInitiative_(body) {
+  var domain = String(body.team || '').trim().toLowerCase();
+  var id = String(body.id || '').trim();
+  if (!domain) throw new Error('Domain is required.');
+  if (!id) throw new Error('ID is required.');
+
+  var name = String(body.name || '').trim();
+  var description = String(body.description || '').trim();
+  var timelineStart = String(body.timelineStart || '').trim();
+  var timelineEnd = String(body.timelineEnd || '').trim();
+  var statusInput = String(body.status || '').trim();
+  var teamIds = readTeamsFromBody_(body);
+  var owner = String(body.owner || '').trim();
+  var priorityInput = String(body.priority || '').trim();
+  var link = String(body.link || '').trim();
+
+  if (!name) throw new Error('Name is required.');
+  if (!description) throw new Error('Description is required.');
+  if (!timelineStart || !timelineEnd) throw new Error('Timeline start and end are required.');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(timelineStart) || !/^\d{4}-\d{2}-\d{2}$/.test(timelineEnd)) {
+    throw new Error('Dates must be YYYY-MM-DD.');
+  }
+  if (timelineEnd < timelineStart) throw new Error('Timeline end must be on or after start.');
+  validateTeamIds_(teamIds);
+  var statusValue = '';
+  if (statusInput) {
+    statusValue = validateStatusLabel_(statusInput);
+  }
+  var priorityValue = validatePriorityLabel_(priorityInput);
+  if (link && !/^https?:\/\//i.test(link)) {
+    throw new Error('Link must start with http:// or https://');
+  }
+
+  var sheetName = sheetNameFromDomainKey_(domain);
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
+  if (!sheet) throw new Error('Sheet not found: ' + sheetName);
+
+  var rowIndex = findRowIndexById_(sheet, id);
+  if (rowIndex < 0) {
+    throw new Error('ID not found on tab ' + sheetName + ': ' + id);
+  }
+
+  var map = getRoadmapColumnMap_(sheet);
+  var maxCol = Math.min(
+    Math.max(map.teamsCol, map.statusCol, map.ownerCol, map.priorityCol, map.linkCol),
+    sheet.getMaxColumns()
+  );
+  // Build the full updatable row in one write (ID + domain stay put).
+  var current = sheet.getRange(rowIndex, 1, 1, maxCol).getValues()[0];
+  function setCol(col, value) {
+    if (col >= 1 && col <= maxCol) current[col - 1] = value;
+  }
+  setCol(map.nameCol, name);
+  setCol(map.descCol, description);
+  setCol(map.startCol, timelineStart);
+  setCol(map.endCol, timelineEnd);
+  setCol(map.statusCol, statusValue);
+  setCol(map.teamsCol, formatTeamsCell_(teamIds));
+  setCol(map.ownerCol, owner);
+  setCol(map.priorityCol, priorityValue);
+  setCol(map.linkCol, link);
+  sheet.getRange(rowIndex, 1, 1, maxCol).setValues([current]);
 
   return { ok: true };
 }

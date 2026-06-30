@@ -39,6 +39,8 @@ export default function App() {
   const [tooltip, setTooltip] = useState({ item: null, target: null, domain: null });
   const hideTooltipTimerRef = useRef(null);
   const [adminOpen, setAdminOpen] = useState(false);
+  const [addPrefill, setAddPrefill] = useState(null);
+  const [editTarget, setEditTarget] = useState(null);
   const [teamsAdminOpen, setTeamsAdminOpen] = useState(false);
   const [adminToken, setAdminToken] = useState(
     () => applyAdminTokenFromUrl() || getStoredAdminToken()
@@ -73,6 +75,10 @@ export default function App() {
 
   const handleStatusesChange = useCallback((statuses) => {
     setFilterState((prev) => ({ ...prev, statuses }));
+  }, []);
+
+  const handlePrioritiesChange = useCallback((priorities) => {
+    setFilterState((prev) => ({ ...prev, priorities }));
   }, []);
 
   const handleClearFilters = useCallback(() => {
@@ -127,6 +133,36 @@ export default function App() {
   const handleAdminSuccess = useCallback(() => {
     refetch();
   }, [refetch]);
+
+  const handleCreateRange = useCallback(({ domain, timelineStart, timelineEnd }) => {
+    setAddPrefill({ domain, timelineStart, timelineEnd });
+    setAdminOpen(true);
+  }, []);
+
+  const handleCloseAdd = useCallback(() => {
+    setAdminOpen(false);
+    setAddPrefill(null);
+  }, []);
+
+  const handleEditInitiative = useCallback(({ domain, item }) => {
+    if (!domain || !item) return;
+    setEditTarget({
+      domain,
+      values: {
+        domain,
+        id: item.id || "",
+        name: item.name || "",
+        description: item.description || "",
+        timelineStart: item.timeline?.[0] || "",
+        timelineEnd: item.timeline?.[1] || "",
+        status: item.status || "",
+        owner: item.owner || "",
+        priority: item.priority || "",
+        link: item.link || "",
+        teams: Array.isArray(item.teams) ? [...item.teams] : [],
+      },
+    });
+  }, []);
 
   useEffect(() => {
     if (loading) setLoaderVisible(true);
@@ -212,7 +248,14 @@ export default function App() {
         subtitle={subtitle}
         themePreference={themePreference}
         onThemeChange={setThemePreference}
-        onAddClick={showAdmin ? () => setAdminOpen(true) : undefined}
+        onAddClick={
+          showAdmin
+            ? () => {
+                setAddPrefill(null);
+                setAdminOpen(true);
+              }
+            : undefined
+        }
         onManageTeamsClick={showAdmin ? () => setTeamsAdminOpen(true) : undefined}
         googleSheetUrl={showGoogleSheetLink ? googleSheetUrl : undefined}
       />
@@ -228,6 +271,7 @@ export default function App() {
             onInitiativeChange={handleInitiativeChange}
             onTeamsChange={handleTeamsChange}
             onStatusesChange={handleStatusesChange}
+            onPrioritiesChange={handlePrioritiesChange}
             onClear={handleClearFilters}
           />
           <div className="roadmap__scroll">
@@ -237,6 +281,8 @@ export default function App() {
               filterState={filterState}
               onShowTooltip={handleShowTooltip}
               onHideTooltip={handleHideTooltip}
+              canCreate={canEditStatus}
+              onCreateRange={canEditStatus ? handleCreateRange : undefined}
             />
           </div>
           <InitiativeTooltip
@@ -244,9 +290,12 @@ export default function App() {
             target={tooltip.target}
             domain={tooltip.domain}
             statuses={data.statuses || []}
+            priorities={data.priorities || []}
             canEditStatus={canEditStatus}
+            canEdit={canEditStatus}
             canDelete={canDeleteInitiatives}
             onStatusChange={canEditStatus ? handleStatusChange : undefined}
+            onEdit={canEditStatus ? handleEditInitiative : undefined}
             onDelete={canDeleteInitiatives ? handleDeleteInitiative : undefined}
             onDeleteStart={canDeleteInitiatives ? handleDeleteStart : undefined}
             onDeleteError={canDeleteInitiatives ? handleDeleteError : undefined}
@@ -258,15 +307,37 @@ export default function App() {
 
       {adminOpen && data ? (
         <AdminModal
+          initialValues={addPrefill}
           domains={getDomainKeys(data)}
           teamOptions={getTeamOptionsForAdmin(data)}
           validTeamIds={getValidTeamIds(data)}
           statusOptions={data.statuses || []}
           validStatusLabels={getValidStatusLabels(data)}
+          priorityOptions={data.priorities || []}
+          validPriorityLabels={(data.priorities || []).map((p) => p.label)}
           adminToken={adminToken}
           onUnlock={handleAdminUnlock}
           onLock={handleAdminLock}
-          onClose={() => setAdminOpen(false)}
+          onClose={handleCloseAdd}
+          onSuccess={handleAdminSuccess}
+        />
+      ) : null}
+
+      {editTarget && data ? (
+        <AdminModal
+          mode="edit"
+          initialValues={editTarget.values}
+          domains={getDomainKeys(data)}
+          teamOptions={getTeamOptionsForAdmin(data)}
+          validTeamIds={getValidTeamIds(data)}
+          statusOptions={data.statuses || []}
+          validStatusLabels={getValidStatusLabels(data)}
+          priorityOptions={data.priorities || []}
+          validPriorityLabels={(data.priorities || []).map((p) => p.label)}
+          adminToken={adminToken}
+          onUnlock={handleAdminUnlock}
+          onLock={handleAdminLock}
+          onClose={() => setEditTarget(null)}
           onSuccess={handleAdminSuccess}
         />
       ) : null}

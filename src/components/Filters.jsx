@@ -152,6 +152,14 @@ function getStatusFilterDefinitions(data) {
   return [];
 }
 
+function getPriorityFilterDefinitions(data) {
+  const defs = data.priorities;
+  if (Array.isArray(defs) && defs.length > 0 && defs[0]?.label) {
+    return defs;
+  }
+  return [];
+}
+
 export default function Filters({
   data,
   filterState,
@@ -159,16 +167,19 @@ export default function Filters({
   onInitiativeChange,
   onTeamsChange,
   onStatusesChange,
+  onPrioritiesChange,
   onClear,
 }) {
   const domains = getDomainsForFilter(data);
   const initiatives = getAllInitiatives(data);
   const teamFilters = getTeamFilterDefinitions(data);
   const statusFilters = getStatusFilterDefinitions(data);
+  const priorityFilters = getPriorityFilterDefinitions(data);
   const filterActive = isFilterActive(filterState);
   const selectedInitiativeId = getSelectedInitiativeId(filterState);
   const selectedTeams = filterState.teams;
   const selectedStatuses = filterState.statuses;
+  const selectedPriorities = filterState.priorities;
 
   const handleTeamPillClick = (teamId) => {
     if (teamId === "all") {
@@ -196,6 +207,20 @@ export default function Filters({
       next.add(statusLabel);
     }
     onStatusesChange(next.size > 0 ? next : null);
+  };
+
+  const handlePriorityPillClick = (priorityLabel) => {
+    if (priorityLabel === "all") {
+      onPrioritiesChange(null);
+      return;
+    }
+    const next = new Set(selectedPriorities || []);
+    if (next.has(priorityLabel)) {
+      next.delete(priorityLabel);
+    } else {
+      next.add(priorityLabel);
+    }
+    onPrioritiesChange(next.size > 0 ? next : null);
   };
 
   const clearFiltersButton = (
@@ -266,6 +291,25 @@ export default function Filters({
               teamActive={selectedStatuses?.has(status.label)}
               dotColor={status.color}
               onClick={() => handleStatusPillClick(status.label)}
+            />
+          ))}
+        </FilterRow>
+      )}
+
+      {priorityFilters.length > 0 && (
+        <FilterRow labelText="Priority:">
+          <FilterPill
+            label="All priorities"
+            teamActive={!selectedPriorities || selectedPriorities.size === 0}
+            onClick={() => handlePriorityPillClick("all")}
+          />
+          {priorityFilters.map((priority) => (
+            <FilterPill
+              key={priority.id}
+              label={priority.label}
+              teamActive={selectedPriorities?.has(priority.label)}
+              dotColor={priority.color}
+              onClick={() => handlePriorityPillClick(priority.label)}
             />
           ))}
         </FilterRow>

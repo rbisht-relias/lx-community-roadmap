@@ -1,4 +1,5 @@
 import { resolveStatusDefinitions } from "../config/statusConfig";
+import { resolvePriorityDefinitions, getValidPriorityLabels } from "../config/priorityConfig";
 import { ROADMAP_DEFAULTS } from "../config/roadmapDefaults";
 
 function getApiUrl() {
@@ -37,6 +38,7 @@ export function mergeRoadmapData(sheetPayload) {
   delete sheetData.teams;
   delete sheetData.cohorts;
   delete sheetData.statuses;
+  delete sheetData.priorities;
 
   return {
     ...ROADMAP_DEFAULTS,
@@ -44,6 +46,7 @@ export function mergeRoadmapData(sheetPayload) {
     meta: { ...ROADMAP_DEFAULTS.meta, ...(payload.meta || {}) },
     teams: resolveTeamFilterDefinitions(payload),
     statuses: resolveStatusDefinitions(payload.statuses),
+    priorities: resolvePriorityDefinitions(payload.priorities),
   };
 }
 
@@ -110,6 +113,10 @@ export async function addInitiative(payload) {
   return postToSheetsApi(payload);
 }
 
+export async function updateInitiative(payload) {
+  return postToSheetsApi({ ...payload, action: "update" });
+}
+
 export async function deleteInitiative({ adminToken, team, id }) {
   return postToSheetsApi({
     action: "delete",
@@ -161,7 +168,12 @@ export function getValidStatusLabels(data) {
   return (data?.statuses || []).map((s) => s.label).filter(Boolean);
 }
 
-export function validateInitiativeForm(fields, validTeamIds = [], validStatusLabels = []) {
+export function validateInitiativeForm(
+  fields,
+  validTeamIds = [],
+  validStatusLabels = [],
+  validPriorityLabels = getValidPriorityLabels()
+) {
   const errors = {};
   const domain = String(fields.domain ?? fields.team ?? "").trim();
   const id = String(fields.id || "").trim();
@@ -170,6 +182,8 @@ export function validateInitiativeForm(fields, validTeamIds = [], validStatusLab
   const timelineStart = String(fields.timelineStart || "").trim();
   const timelineEnd = String(fields.timelineEnd || "").trim();
   const status = String(fields.status || "").trim();
+  const priority = String(fields.priority || "").trim();
+  const link = String(fields.link || "").trim();
   const teamIds = normalizeTeamsField(fields.teams ?? fields.cohort);
 
   if (!domain) errors.domain = "Domain is required.";
@@ -191,6 +205,14 @@ export function validateInitiativeForm(fields, validTeamIds = [], validStatusLab
 
   if (status && validStatusLabels.length > 0 && !validStatusLabels.includes(status)) {
     errors.status = `Status must be one of: ${validStatusLabels.join(", ")}.`;
+  }
+
+  if (priority && validPriorityLabels.length > 0 && !validPriorityLabels.includes(priority)) {
+    errors.priority = `Priority must be one of: ${validPriorityLabels.join(", ")}.`;
+  }
+
+  if (link && !/^https?:\/\//i.test(link)) {
+    errors.link = "Link must start with http:// or https://";
   }
 
   return { errors, valid: Object.keys(errors).length === 0 };

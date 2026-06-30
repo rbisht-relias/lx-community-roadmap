@@ -17,8 +17,6 @@ function buildLookup(definitions) {
   return map;
 }
 
-const DEFAULT_LOOKUP = buildLookup(DEFAULT_STATUSES);
-
 export function normalizeStatusKey(value) {
   return String(value || "")
     .trim()

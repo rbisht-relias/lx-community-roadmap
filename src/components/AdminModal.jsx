@@ -1,6 +1,10 @@
 import { useCallback, useState } from "react";
 import { formatDomainLabel } from "../utils/roadmapUtils";
-import { addInitiative, validateInitiativeForm } from "../services/sheetsApi";
+import {
+  addInitiative,
+  updateInitiative,
+  validateInitiativeForm,
+} from "../services/sheetsApi";
 
 const EMPTY_FORM = {
   domain: "",
@@ -10,28 +14,39 @@ const EMPTY_FORM = {
   timelineStart: "",
   timelineEnd: "",
   status: "",
+  owner: "",
+  priority: "",
+  link: "",
   teams: [],
 };
 
-function buildInitialForm(domains) {
+function buildInitialForm(domains, initialValues) {
+  if (initialValues) {
+    return { ...EMPTY_FORM, ...initialValues, teams: initialValues.teams || [] };
+  }
   return { ...EMPTY_FORM, domain: domains[0] || "" };
 }
 
 export default function AdminModal({
+  mode = "add",
+  initialValues = null,
   domains,
   teamOptions = [],
   validTeamIds = [],
   statusOptions = [],
   validStatusLabels = [],
+  priorityOptions = [],
+  validPriorityLabels = [],
   adminToken,
   onUnlock,
   onLock,
   onClose,
   onSuccess,
 }) {
+  const isEdit = mode === "edit";
   const [tokenInput, setTokenInput] = useState("");
   const unlocked = Boolean(adminToken);
-  const [form, setForm] = useState(() => buildInitialForm(domains));
+  const [form, setForm] = useState(() => buildInitialForm(domains, initialValues));
   const [fieldErrors, setFieldErrors] = useState({});
   const [submitError, setSubmitError] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -83,7 +98,8 @@ export default function AdminModal({
       const { errors, valid } = validateInitiativeForm(
         form,
         validTeamIds,
-        validStatusLabels
+        validStatusLabels,
+        validPriorityLabels
       );
       if (!valid) {
         setFieldErrors(errors);
@@ -92,18 +108,26 @@ export default function AdminModal({
 
       setSubmitting(true);
       setSubmitError("");
+      const payload = {
+        adminToken,
+        team: form.domain.trim(),
+        id: form.id.trim(),
+        name: form.name.trim(),
+        description: form.description.trim(),
+        timelineStart: form.timelineStart,
+        timelineEnd: form.timelineEnd,
+        status: form.status || "",
+        owner: form.owner.trim(),
+        priority: form.priority || "",
+        link: form.link.trim(),
+        teams: form.teams.join(","),
+      };
       try {
-        await addInitiative({
-          adminToken,
-          team: form.domain.trim(),
-          id: form.id.trim(),
-          name: form.name.trim(),
-          description: form.description.trim(),
-          timelineStart: form.timelineStart,
-          timelineEnd: form.timelineEnd,
-          status: form.status || "",
-          teams: form.teams.join(","),
-        });
+        if (isEdit) {
+          await updateInitiative(payload);
+        } else {
+          await addInitiative(payload);
+        }
         onSuccess?.();
         onClose();
       } catch (err) {
@@ -112,7 +136,16 @@ export default function AdminModal({
         setSubmitting(false);
       }
     },
-    [adminToken, form, onClose, onSuccess, validTeamIds, validStatusLabels]
+    [
+      adminToken,
+      form,
+      isEdit,
+      onClose,
+      onSuccess,
+      validTeamIds,
+      validStatusLabels,
+      validPriorityLabels,
+    ]
   );
 
   const footer = (content) => (
@@ -131,9 +164,11 @@ export default function AdminModal({
         <header className="admin-modal__header">
           <div className="admin-modal__header-text">
             <h2 id="admin-modal-title" className="admin-modal__title">
-              Add initiative
+              {isEdit ? "Edit initiative" : "Add initiative"}
             </h2>
-            <p className="admin-modal__subtitle">Create a row in Google Sheets</p>
+            <p className="admin-modal__subtitle">
+              {isEdit ? "Update a row in Google Sheets" : "Create a row in Google Sheets"}
+            </p>
           </div>
           <button
             type="button"
@@ -199,7 +234,7 @@ export default function AdminModal({
                 value={form.domain}
                 onChange={(e) => updateField("domain", e.target.value)}
                 required
-                disabled={domains.length === 0}
+                disabled={isEdit || domains.length === 0}
               >
                 {domains.map((tab) => (
                   <option key={tab} value={tab}>
@@ -207,7 +242,12 @@ export default function AdminModal({
                   </option>
                 ))}
               </select>
-              {domains.length === 0 ? (
+              {isEdit ? (
+                <span className="admin-field__hint-inline">
+                  Domain can't be changed when editing.
+                </span>
+              ) : null}
+              {!isEdit && domains.length === 0 ? (
                 <span className="admin-field__error">No domains loaded yet.</span>
               ) : null}
               {fieldErrors.domain ? (
@@ -225,7 +265,14 @@ export default function AdminModal({
                 value={form.id}
                 onChange={(e) => updateField("id", e.target.value)}
                 required
+                readOnly={isEdit}
+                disabled={isEdit}
               />
+              {isEdit ? (
+                <span className="admin-field__hint-inline">
+                  ID is the row key and can't be changed.
+                </span>
+              ) : null}
               {fieldErrors.id ? (
                 <span className="admin-field__error">{fieldErrors.id}</span>
               ) : null}
@@ -316,6 +363,53 @@ export default function AdminModal({
               ) : null}
             </label>
 
+            <label className="admin-field">
+              <span className="admin-field__label">Owner (optional)</span>
+              <input
+                type="text"
+                className="admin-field__input"
+                value={form.owner}
+                onChange={(e) => updateField("owner", e.target.value)}
+                placeholder="e.g. Jane D. or Platform team"
+              />
+              {fieldErrors.owner ? (
+                <span className="admin-field__error">{fieldErrors.owner}</span>
+              ) : null}
+            </label>
+
+            <label className="admin-field">
+              <span className="admin-field__label">Priority (optional)</span>
+              <select
+                className="admin-field__input"
+                value={form.priority}
+                onChange={(e) => updateField("priority", e.target.value)}
+              >
+                <option value="">None</option>
+                {priorityOptions.map((opt) => (
+                  <option key={opt.id} value={opt.label}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+              {fieldErrors.priority ? (
+                <span className="admin-field__error">{fieldErrors.priority}</span>
+              ) : null}
+            </label>
+
+            <label className="admin-field">
+              <span className="admin-field__label">Link (optional)</span>
+              <input
+                type="url"
+                className="admin-field__input"
+                value={form.link}
+                onChange={(e) => updateField("link", e.target.value)}
+                placeholder="https://…"
+              />
+              {fieldErrors.link ? (
+                <span className="admin-field__error">{fieldErrors.link}</span>
+              ) : null}
+            </label>
+
             <fieldset className="admin-field admin-field--teams">
               <legend className="admin-field__label">Teams (optional)</legend>
               <p className="admin-field__hint-inline">
@@ -363,9 +457,13 @@ export default function AdminModal({
                 <button
                   type="submit"
                   className="admin-btn admin-btn--primary"
-                  disabled={submitting || domains.length === 0}
+                  disabled={submitting || (!isEdit && domains.length === 0)}
                 >
-                  {submitting ? "Saving…" : "Add to sheet"}
+                  {submitting
+                    ? "Saving…"
+                    : isEdit
+                      ? "Save changes"
+                      : "Add to sheet"}
                 </button>
               </>
             )}
