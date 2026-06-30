@@ -9,6 +9,7 @@ import {
   deleteStatusDef,
   addPriorityDef,
   deletePriorityDef,
+  getGoogleSheetUrl,
 } from "../../services/sheetsApi";
 
 const EXIT_MS = 180;
@@ -227,12 +228,32 @@ export default function SettingsView({ data, adminToken, applyRoadmap, refetch }
     );
   };
 
+  const sheetUrl = getGoogleSheetUrl();
+
   return (
     <div className="settings">
-      <p className="settings__intro">
-        Manage the building blocks used across the roadmap. Items in use by a project can&apos;t be
-        deleted until they&apos;re removed from those projects.
-      </p>
+      <div className="settings__intro-row">
+        <p className="settings__intro">
+          Manage the building blocks used across the roadmap. Items in use by a project can&apos;t
+          be deleted until they&apos;re removed from those projects.
+        </p>
+        {sheetUrl ? (
+          <a
+            className="settings__sheet-link"
+            href={sheetUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true" width="15" height="15">
+              <path
+                fill="currentColor"
+                d="M19 3H5a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2V5a2 2 0 00-2-2zm0 16H5V5h14v14zM7 9h10v2H7V9zm0 4h10v2H7v-2z"
+              />
+            </svg>
+            Open Google Sheet ↗
+          </a>
+        ) : null}
+      </div>
       <div className="settings__grid">
         <SettingsSection
           title="Domains"

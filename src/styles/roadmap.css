@@ -1900,11 +1900,18 @@ html, body, #root { height: 100%; }
 }
 
 .sidebar__logo {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   width: 26px;
   height: 26px;
   border-radius: 7px;
   background: linear-gradient(135deg, #287339, #34954a);
   flex-shrink: 0;
+  color: #fff;
+  font-size: 0.85rem;
+  font-weight: 800;
+  line-height: 1;
 }
 
 .sidebar__brand-text {
@@ -2703,3 +2710,38 @@ html, body, #root { height: 100%; }
 .cb-count[data-zero="true"] { background: var(--success); }
 .cb-table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 10px; }
 .cb-table-wrap .projects-table thead th { background: var(--surface); }
+
+/* ---------- Cookiebot reports table: clickable + active row ---------- */
+.cb-report-file { font-weight: 500; color: var(--text-muted); font-size: 0.85rem; }
+.projects-table tr.is-active-report { background: var(--surface-active); }
+.projects-table tr.is-active-report .projects-table__namebtn { color: var(--text); }
+
+/* ---------- Settings: intro + Google Sheet link ---------- */
+.settings__intro-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.settings__intro-row .settings__intro { margin: 0; }
+
+.settings__sheet-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex-shrink: 0;
+  padding: 8px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-elevated);
+  color: var(--accent-text);
+  font-size: 0.82rem;
+  font-weight: 600;
+  text-decoration: none;
+  transition: border-color 0.15s, background 0.15s;
+}
+.settings__sheet-link:hover {
+  border-color: var(--accent);
+  background: var(--btn-hover-bg);
+}

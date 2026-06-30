@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import AdminModal from "./components/AdminModal";
-import TeamsAdminModal from "./components/TeamsAdminModal";
 import {
   applyAdminTokenFromUrl,
   clearStoredAdminTokens,
@@ -99,7 +98,6 @@ export default function App() {
   const [adminOpen, setAdminOpen] = useState(false);
   const [addPrefill, setAddPrefill] = useState(null);
   const [editTarget, setEditTarget] = useState(null);
-  const [teamsAdminOpen, setTeamsAdminOpen] = useState(false);
   const [adminToken, setAdminToken] = useState(() => {
     // Priority: explicit ?token= in the URL → configured .env token → any saved
     // token → local fallback. .env wins over stale sessionStorage so a leftover
@@ -262,9 +260,6 @@ export default function App() {
     [data, applyRoadmap, refetch]
   );
 
-  const handleAdminSuccess = useCallback(() => {
-    refetch();
-  }, [refetch]);
 
   const handleCreateRange = useCallback(({ domain, timelineStart, timelineEnd }) => {
     setAddPrefill({ domain, timelineStart, timelineEnd });
@@ -387,8 +382,6 @@ export default function App() {
         collapsed={sidebarCollapsed}
         themePreference={themePreference}
         onThemeChange={setThemePreference}
-        onAddClick={showAdmin ? openAddModal : undefined}
-        onManageTeamsClick={showAdmin ? () => setTeamsAdminOpen(true) : undefined}
       />
 
       <main className="app__main">
@@ -551,17 +544,6 @@ export default function App() {
           onLock={handleAdminLock}
           onClose={() => setEditTarget(null)}
           onSave={handleOptimisticUpdate}
-        />
-      ) : null}
-
-      {teamsAdminOpen && data ? (
-        <TeamsAdminModal
-          teams={data.teams || []}
-          adminToken={adminToken}
-          onUnlock={handleAdminUnlock}
-          onLock={handleAdminLock}
-          onClose={() => setTeamsAdminOpen(false)}
-          onSuccess={handleAdminSuccess}
         />
       ) : null}
     </div>

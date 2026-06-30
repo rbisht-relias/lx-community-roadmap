@@ -41,13 +41,11 @@ export default function Sidebar({
   collapsed = false,
   themePreference,
   onThemeChange,
-  onAddClick,
-  onManageTeamsClick,
 }) {
   return (
     <aside className={`sidebar${collapsed ? " sidebar--collapsed" : ""}`}>
       <div className="sidebar__brand">
-        <span className="sidebar__logo" aria-hidden="true" />
+        <span className="sidebar__logo" aria-hidden="true">R</span>
         <span className="sidebar__brand-text">{ROADMAP_TITLE}</span>
       </div>
 
@@ -68,28 +66,6 @@ export default function Sidebar({
       </nav>
 
       <div className="sidebar__footer">
-        {onAddClick ? (
-          <button
-            type="button"
-            title={collapsed ? "Add project" : undefined}
-            className="sidebar__action sidebar__action--primary"
-            onClick={onAddClick}
-          >
-            <span className="sidebar__action-full">+ Add project</span>
-            <span className="sidebar__action-short" aria-hidden="true">+</span>
-          </button>
-        ) : null}
-        {onManageTeamsClick ? (
-          <button
-            type="button"
-            title={collapsed ? "Manage teams" : undefined}
-            className="sidebar__action sidebar__action--hide-collapsed"
-            onClick={onManageTeamsClick}
-          >
-            Manage teams
-          </button>
-        ) : null}
-
         {onThemeChange ? (
           <div className="sidebar__theme">
             <ThemeSwitcher preference={themePreference} onChange={onThemeChange} />

@@ -61,6 +61,7 @@ export default function SitesView({ adminUnlocked, data, adminToken, refetch }) 
   const allReports = data?.cookiebotReports || [];
 
   const [selectedName, setSelectedName] = useState(sites[0]?.name || null);
+  const [selectedReportKey, setSelectedReportKey] = useState(null);
   const [newSite, setNewSite] = useState({ name: "", domain: "" });
   const [error, setError] = useState("");
   const [uploading, setUploading] = useState(false);
@@ -73,7 +74,11 @@ export default function SitesView({ adminUnlocked, data, adminToken, refetch }) 
     .filter((r) => selectedSite && r.site === selectedSite.name)
     .slice()
     .sort((a, b) => String(b.uploaded).localeCompare(String(a.uploaded)));
-  const latest = reports[0];
+
+  const reportKey = (r) => `${r.fileName}__${r.uploaded}`;
+  // The report shown in the summary card: the clicked one, else the latest.
+  const latest =
+    reports.find((r) => reportKey(r) === selectedReportKey) || reports[0];
 
   const handleAddSite = useCallback(
     async (e) => {
@@ -257,7 +262,12 @@ export default function SitesView({ adminUnlocked, data, adminToken, refetch }) 
             {s ? (
               <div className="report-summary">
                 <div className="cb-summary-head">
-                  <h3 className="panel__title">Latest scan — {s.domain}</h3>
+                  <h3 className="panel__title">
+                    {s.domain}
+                    {latest?.fileName ? (
+                      <span className="cb-report-file"> · {latest.fileName}</span>
+                    ) : null}
+                  </h3>
                   <span className="cb-scan-date">Scan date: {s.scanDate}</span>
                 </div>
                 <div className="report-summary__stats">
@@ -356,8 +366,20 @@ export default function SitesView({ adminUnlocked, data, adminToken, refetch }) 
                 </thead>
                 <tbody>
                   {reports.map((r, idx) => (
-                    <tr key={`${r.fileName}-${idx}`}>
-                      <td className="projects-table__name">{r.fileName}</td>
+                    <tr
+                      key={`${r.fileName}-${idx}`}
+                      className={reportKey(r) === reportKey(latest) ? "is-active-report" : ""}
+                    >
+                      <td className="projects-table__name">
+                        <button
+                          type="button"
+                          className="projects-table__namebtn"
+                          onClick={() => setSelectedReportKey(reportKey(r))}
+                          title="Show this report above"
+                        >
+                          {r.fileName}
+                        </button>
+                      </td>
                       <td className="projects-table__timeline">{formatDate(r.uploaded)}</td>
                       <td>{r.size || "—"}</td>
                       <td>{r.data?.total ?? "—"}</td>
