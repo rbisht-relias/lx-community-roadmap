@@ -431,7 +431,12 @@ export default function App() {
             view === "overview" ? (
               <OverviewView data={data} onSelectProject={handleSelectProject} />
             ) : view === "sites" ? (
-              <SitesView adminUnlocked={adminUnlocked} />
+              <SitesView
+                adminUnlocked={adminUnlocked}
+                data={data}
+                adminToken={adminToken}
+                refetch={refetch}
+              />
             ) : view === "settings" ? (
               <SettingsView
                 data={data}

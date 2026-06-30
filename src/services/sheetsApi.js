@@ -100,6 +100,9 @@ export function normalizeRemotePayload(payload) {
     });
   });
 
+  if (Array.isArray(payload.cookiebotSites)) out.cookiebotSites = payload.cookiebotSites;
+  if (Array.isArray(payload.cookiebotReports)) out.cookiebotReports = payload.cookiebotReports;
+
   return out;
 }
 
@@ -256,6 +259,41 @@ export async function addPriorityDef({ adminToken, label, color }) {
 
 export async function deletePriorityDef({ adminToken, label }) {
   return postToSheetsApi({ action: "deletePriority", adminToken, label: String(label || "").trim() });
+}
+
+export async function addCookiebotSite({ adminToken, name, domain }) {
+  return postToSheetsApi({
+    action: "addCookiebotSite",
+    adminToken,
+    name: String(name || "").trim(),
+    domain: String(domain || "").trim(),
+  });
+}
+
+export async function deleteCookiebotSite({ adminToken, name }) {
+  return postToSheetsApi({ action: "deleteCookiebotSite", adminToken, name: String(name || "").trim() });
+}
+
+export async function addCookiebotReport({ adminToken, site, fileName, uploaded, size, data }) {
+  return postToSheetsApi({
+    action: "addCookiebotReport",
+    adminToken,
+    site: String(site || "").trim(),
+    fileName: String(fileName || "").trim(),
+    uploaded: String(uploaded || "").trim(),
+    size: String(size || "").trim(),
+    data: data || {},
+  });
+}
+
+export async function deleteCookiebotReport({ adminToken, site, fileName, uploaded }) {
+  return postToSheetsApi({
+    action: "deleteCookiebotReport",
+    adminToken,
+    site: String(site || "").trim(),
+    fileName: String(fileName || "").trim(),
+    uploaded: String(uploaded || "").trim(),
+  });
 }
 
 export async function updateInitiativeStatus({ adminToken, team, id, status }) {

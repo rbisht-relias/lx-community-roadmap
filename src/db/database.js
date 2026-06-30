@@ -115,12 +115,14 @@ const byOrder = (a, b) => (a.order ?? 0) - (b.order ?? 0);
 
 /** Assemble the nested payload the rest of the app expects. */
 export async function getRoadmap() {
-  const [projects, teams, domains, statuses, priorities] = await Promise.all([
+  const [projects, teams, domains, statuses, priorities, sites, reports] = await Promise.all([
     db.projects.toArray(),
     db.teams.toArray(),
     db.domains.toArray(),
     db.statuses.toArray(),
     db.priorities.toArray(),
+    db.sites.toArray(),
+    db.reports.toArray(),
   ]);
 
   const statusDefs = statuses.length ? statuses.slice().sort(byOrder) : DEFAULT_STATUSES;
@@ -140,6 +142,18 @@ export async function getRoadmap() {
     if (!payload[row.domain]) payload[row.domain] = [];
     payload[row.domain].push(toInitiative(row));
   });
+
+  payload.cookiebotSites = sites.map((s) => ({
+    name: s.name,
+    domain: s.domain || s.url || "",
+  }));
+  payload.cookiebotReports = reports.map((r) => ({
+    site: r.site || "",
+    fileName: r.fileName || "",
+    uploaded: r.uploaded || r.uploadedAt || "",
+    size: r.size || "",
+    data: r.data || r.summary || null,
+  }));
   return payload;
 }
 
@@ -249,6 +263,52 @@ export async function postToLocal(payload) {
   }
   if (action === "deletepriority") {
     await deletePriorityDef(slug(payload.id || payload.label));
+    return { ok: true };
+  }
+  if (action === "addcookiebotsite") {
+    const name = String(payload.name || "").trim();
+    if (!name) throw new Error("Site name is required.");
+    const existing = await db.sites.toArray();
+    if (existing.some((s) => (s.name || "").toLowerCase() === name.toLowerCase())) {
+      throw new Error(`Site already exists: ${name}`);
+    }
+    await db.sites.add({ name, domain: String(payload.domain || "").trim() });
+    return { ok: true };
+  }
+  if (action === "deletecookiebotsite") {
+    const name = String(payload.name || "").trim().toLowerCase();
+    const rows = await db.sites.toArray();
+    const hit = rows.find((s) => (s.name || "").toLowerCase() === name);
+    if (hit) await db.sites.delete(hit.id);
+    // Also remove that site's reports.
+    const reps = await db.reports.toArray();
+    await Promise.all(
+      reps.filter((r) => (r.site || "").toLowerCase() === name).map((r) => db.reports.delete(r.id))
+    );
+    return { ok: true };
+  }
+  if (action === "addcookiebotreport") {
+    await db.reports.add({
+      site: String(payload.site || "").trim(),
+      fileName: String(payload.fileName || "").trim(),
+      uploaded: String(payload.uploaded || new Date().toISOString()),
+      size: String(payload.size || ""),
+      data: payload.data || null,
+    });
+    return { ok: true };
+  }
+  if (action === "deletecookiebotreport") {
+    const site = String(payload.site || "").trim().toLowerCase();
+    const file = String(payload.fileName || "").trim().toLowerCase();
+    const up = String(payload.uploaded || "").trim().toLowerCase();
+    const reps = await db.reports.toArray();
+    const hit = reps.find(
+      (r) =>
+        (r.site || "").toLowerCase() === site &&
+        (r.fileName || "").toLowerCase() === file &&
+        (!up || String(r.uploaded || "").toLowerCase() === up)
+    );
+    if (hit) await db.reports.delete(hit.id);
     return { ok: true };
   }
   if (action === "delete") return deleteProject(payload);

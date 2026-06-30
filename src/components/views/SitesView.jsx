@@ -1,23 +1,21 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import {
-  listSites,
-  addSite,
-  deleteSite,
-  listReports,
-  addReport,
-  deleteReport,
-  getReportBlob,
-} from "../../db/database";
-import { summarizeCookieReport } from "../../utils/cookieReport";
+  addCookiebotSite,
+  deleteCookiebotSite,
+  addCookiebotReport,
+  deleteCookiebotReport,
+} from "../../services/sheetsApi";
+import { isCookiebotHtml, parseCookiebotHtml, cookiesToCsv } from "../../utils/cookiebotHtml";
 
 function formatBytes(n) {
-  if (!n) return "0 B";
+  if (!n) return "";
   const units = ["B", "KB", "MB"];
   const i = Math.min(units.length - 1, Math.floor(Math.log(n) / Math.log(1024)));
   return `${(n / 1024 ** i).toFixed(i ? 1 : 0)} ${units[i]}`;
 }
 
 function formatDate(iso) {
+  if (!iso) return "—";
   try {
     return new Date(iso).toLocaleString("en-US", {
       month: "short",
@@ -31,80 +29,113 @@ function formatDate(iso) {
   }
 }
 
-export default function SitesView({ adminUnlocked }) {
-  const [sites, setSites] = useState([]);
-  const [selectedId, setSelectedId] = useState(null);
-  const [reports, setReports] = useState([]);
-  const [newSite, setNewSite] = useState({ name: "", url: "" });
+function GcmRow({ label, value }) {
+  const v = value || "—";
+  const ok = /no risk|active|no\b/i.test(v) && !/at risk|fail|missing/i.test(v);
+  return (
+    <li>
+      <span>{label}</span>
+      {value ? (
+        <span className={`cb-status ${ok ? "cb-status--ok" : "cb-status--risk"}`}>{v}</span>
+      ) : (
+        <span>—</span>
+      )}
+    </li>
+  );
+}
+
+function downloadCsv(filename, csv) {
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+export default function SitesView({ adminUnlocked, data, adminToken, refetch }) {
+  const sites = data?.cookiebotSites || [];
+  const allReports = data?.cookiebotReports || [];
+
+  const [selectedName, setSelectedName] = useState(sites[0]?.name || null);
+  const [newSite, setNewSite] = useState({ name: "", domain: "" });
   const [error, setError] = useState("");
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef(null);
 
-  const refreshSites = useCallback(async () => {
-    const all = await listSites();
-    setSites(all);
-    setSelectedId((cur) => (cur && all.some((s) => s.id === cur) ? cur : all[0]?.id ?? null));
-  }, []);
+  const selectedSite =
+    sites.find((s) => s.name === selectedName) || sites[0] || null;
 
-  const refreshReports = useCallback(async (siteId) => {
-    if (!siteId) {
-      setReports([]);
-      return;
-    }
-    setReports(await listReports(siteId));
-  }, []);
-
-  useEffect(() => {
-    refreshSites();
-  }, [refreshSites]);
-
-  useEffect(() => {
-    refreshReports(selectedId);
-  }, [selectedId, refreshReports]);
-
-  const selectedSite = sites.find((s) => s.id === selectedId) || null;
+  const reports = allReports
+    .filter((r) => selectedSite && r.site === selectedSite.name)
+    .slice()
+    .sort((a, b) => String(b.uploaded).localeCompare(String(a.uploaded)));
+  const latest = reports[0];
 
   const handleAddSite = useCallback(
     async (e) => {
       e.preventDefault();
       setError("");
       try {
-        const id = await addSite(newSite);
-        setNewSite({ name: "", url: "" });
-        await refreshSites();
-        setSelectedId(id);
+        await addCookiebotSite({ adminToken, name: newSite.name, domain: newSite.domain });
+        setSelectedName(newSite.name.trim());
+        setNewSite({ name: "", domain: "" });
+        refetch();
       } catch (err) {
         setError(err.message || "Could not add site.");
       }
     },
-    [newSite, refreshSites]
+    [adminToken, newSite, refetch]
   );
 
   const handleDeleteSite = useCallback(
-    async (id) => {
-      if (!window.confirm("Delete this site and all its reports?")) return;
-      await deleteSite(id);
-      await refreshSites();
+    async (name) => {
+      if (!window.confirm(`Delete site "${name}" and its reports?`)) return;
+      try {
+        await deleteCookiebotSite({ adminToken, name });
+        refetch();
+      } catch (err) {
+        setError(err.message || "Could not delete site.");
+      }
     },
-    [refreshSites]
+    [adminToken, refetch]
   );
 
   const handleUpload = useCallback(
     async (e) => {
       const file = e.target.files?.[0];
-      if (!file || !selectedId) return;
+      if (!file || !selectedSite) return;
       setUploading(true);
       setError("");
       try {
-        let summary = null;
-        try {
-          const text = await file.text();
-          summary = summarizeCookieReport(text, file.type, file.name);
-        } catch {
-          summary = null;
+        const text = await file.text();
+        if (!isCookiebotHtml(text)) {
+          throw new Error("Not a Cookiebot .htm scan report.");
         }
-        await addReport({ siteId: selectedId, file, summary });
-        await refreshReports(selectedId);
+        const parsed = parseCookiebotHtml(text);
+        const reportData = {
+          domain: parsed.summary.domain,
+          scanDate: parsed.summary.scanDate,
+          serverLocation: parsed.summary.serverLocation,
+          total: parsed.summary.total,
+          newCookies: parsed.summary.newCookies,
+          removedCookies: parsed.summary.removedCookies,
+          notBlockedCount: parsed.notBlocked.length,
+          gcm: parsed.summary.gcm,
+          notBlocked: parsed.notBlocked,
+        };
+        await addCookiebotReport({
+          adminToken,
+          site: selectedSite.name,
+          fileName: file.name,
+          uploaded: new Date().toISOString(),
+          size: formatBytes(file.size),
+          data: reportData,
+        });
+        refetch();
       } catch (err) {
         setError(err.message || "Upload failed.");
       } finally {
@@ -112,32 +143,34 @@ export default function SitesView({ adminUnlocked }) {
         if (fileInputRef.current) fileInputRef.current.value = "";
       }
     },
-    [selectedId, refreshReports]
+    [adminToken, selectedSite, refetch]
   );
 
-  const handleDownload = useCallback(async (report) => {
-    const blob = await getReportBlob(report.id);
-    if (!blob) return;
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = report.fileName || "cookiebot-report";
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
+  const handleExportCsv = useCallback((report) => {
+    const list = report?.data?.notBlocked || [];
+    const base = (report?.site || "site").replace(/[^a-z0-9]+/gi, "-");
+    downloadCsv(`${base}-not-blocked-cookies.csv`, cookiesToCsv(list));
   }, []);
 
   const handleDeleteReport = useCallback(
-    async (id) => {
-      if (!window.confirm("Delete this report?")) return;
-      await deleteReport(id);
-      await refreshReports(selectedId);
+    async (report) => {
+      if (!window.confirm(`Delete report "${report.fileName}"?`)) return;
+      try {
+        await deleteCookiebotReport({
+          adminToken,
+          site: report.site,
+          fileName: report.fileName,
+          uploaded: report.uploaded,
+        });
+        refetch();
+      } catch (err) {
+        setError(err.message || "Could not delete report.");
+      }
     },
-    [selectedId, refreshReports]
+    [adminToken, refetch]
   );
 
-  const latest = reports[0];
+  const s = latest?.data;
 
   return (
     <div className="sites">
@@ -145,14 +178,14 @@ export default function SitesView({ adminUnlocked }) {
         <h3 className="sites__list-title">Sites</h3>
         <ul>
           {sites.map((site) => (
-            <li key={site.id}>
+            <li key={site.name}>
               <button
                 type="button"
-                className={`sites__site${site.id === selectedId ? " is-active" : ""}`}
-                onClick={() => setSelectedId(site.id)}
+                className={`sites__site${site.name === selectedSite?.name ? " is-active" : ""}`}
+                onClick={() => setSelectedName(site.name)}
               >
                 <span className="sites__site-name">{site.name}</span>
-                {site.url ? <span className="sites__site-url">{site.url}</span> : null}
+                {site.domain ? <span className="sites__site-url">{site.domain}</span> : null}
               </button>
             </li>
           ))}
@@ -165,14 +198,14 @@ export default function SitesView({ adminUnlocked }) {
               type="text"
               placeholder="Site name"
               value={newSite.name}
-              onChange={(e) => setNewSite((s) => ({ ...s, name: e.target.value }))}
+              onChange={(e) => setNewSite((v) => ({ ...v, name: e.target.value }))}
               required
             />
             <input
-              type="url"
-              placeholder="https://…"
-              value={newSite.url}
-              onChange={(e) => setNewSite((s) => ({ ...s, url: e.target.value }))}
+              type="text"
+              placeholder="Domain (e.g. www.relias.com)"
+              value={newSite.domain}
+              onChange={(e) => setNewSite((v) => ({ ...v, domain: e.target.value }))}
             />
             <button type="submit" className="sites__add-btn">
               Add site
@@ -183,27 +216,25 @@ export default function SitesView({ adminUnlocked }) {
 
       <section className="sites__detail">
         {!selectedSite ? (
-          <p className="panel__empty">Select or add a site to manage its Cookiebot reports.</p>
+          <p className="panel__empty">Add a site to start tracking its Cookiebot reports.</p>
         ) : (
           <>
             <header className="sites__detail-head">
               <div>
                 <h2 className="sites__detail-title">{selectedSite.name}</h2>
-                {selectedSite.url ? (
-                  <a href={selectedSite.url} target="_blank" rel="noopener noreferrer" className="sites__detail-url">
-                    {selectedSite.url}
-                  </a>
+                {selectedSite.domain ? (
+                  <span className="sites__detail-url">{selectedSite.domain}</span>
                 ) : null}
               </div>
               <div className="sites__detail-actions">
                 {adminUnlocked ? (
                   <>
                     <label className="sites__upload">
-                      {uploading ? "Uploading…" : "Upload report"}
+                      {uploading ? "Uploading…" : "Upload .htm report"}
                       <input
                         ref={fileInputRef}
                         type="file"
-                        accept=".csv,.json,.pdf,text/csv,application/json"
+                        accept=".htm,.html,text/html"
                         onChange={handleUpload}
                         hidden
                         disabled={uploading}
@@ -212,7 +243,7 @@ export default function SitesView({ adminUnlocked }) {
                     <button
                       type="button"
                       className="sites__danger"
-                      onClick={() => handleDeleteSite(selectedSite.id)}
+                      onClick={() => handleDeleteSite(selectedSite.name)}
                     >
                       Delete site
                     </button>
@@ -223,27 +254,88 @@ export default function SitesView({ adminUnlocked }) {
 
             {error ? <p className="roadmap__error">{error}</p> : null}
 
-            {latest?.summary?.parsed ? (
+            {s ? (
               <div className="report-summary">
-                <h3 className="panel__title">Latest report insights</h3>
-                <div className="report-summary__stats">
-                  <div><strong>{latest.summary.cookieCount}</strong><span>cookies</span></div>
-                  <div><strong>{latest.summary.unclassified}</strong><span>unclassified</span></div>
-                  <div><strong>{latest.summary.marketing}</strong><span>marketing</span></div>
-                  <div><strong>{latest.summary.providerCount}</strong><span>providers</span></div>
+                <div className="cb-summary-head">
+                  <h3 className="panel__title">Latest scan — {s.domain}</h3>
+                  <span className="cb-scan-date">Scan date: {s.scanDate}</span>
                 </div>
-                <div className="report-summary__cols">
-                  <div>
-                    <h4>Issues</h4>
-                    <ul>{latest.summary.issues.map((i, idx) => <li key={idx}>{i}</li>)}</ul>
+                <div className="report-summary__stats">
+                  <div><strong>{s.total}</strong><span>cookies</span></div>
+                  <div><strong>{s.newCookies}</strong><span>new</span></div>
+                  <div><strong>{s.removedCookies}</strong><span>removed</span></div>
+                  <div className={s.notBlockedCount > 0 ? "cb-risk" : ""}>
+                    <strong>{s.notBlockedCount}</strong><span>not blocked</span>
                   </div>
-                  {latest.summary.recommendations.length ? (
-                    <div>
-                      <h4>Recommendations</h4>
-                      <ul>{latest.summary.recommendations.map((r, idx) => <li key={idx}>{r}</li>)}</ul>
-                    </div>
+                  <div><strong>{s.serverLocation || "—"}</strong><span>server</span></div>
+                </div>
+
+                <div className="cb-gcm">
+                  <h4>Google Consent Mode</h4>
+                  <ul>
+                    <GcmRow label="Risk summary" value={s.gcm?.riskSummary} />
+                    <GcmRow label="Default params" value={s.gcm?.defaultParams} />
+                    <GcmRow label="CMP→GCM signal" value={s.gcm?.cmpSignal} />
+                    <GcmRow label="Trackers blocked" value={s.gcm?.trackersBlocked} />
+                  </ul>
+                </div>
+
+                <div className="cb-notblocked-head">
+                  <h4>
+                    Cookies set before consent — “Blocked: No”
+                    <span className="cb-count" data-zero={s.notBlockedCount === 0}>
+                      {s.notBlockedCount}
+                    </span>
+                  </h4>
+                  {s.notBlockedCount > 0 ? (
+                    <button
+                      type="button"
+                      className="projects-table__btn"
+                      onClick={() => handleExportCsv(latest)}
+                    >
+                      Export CSV
+                    </button>
                   ) : null}
                 </div>
+
+                {s.notBlockedCount === 0 ? (
+                  <p className="panel__empty">No cookies were set before consent. 🎉</p>
+                ) : (
+                  <div className="cb-table-wrap">
+                    <table className="projects-table">
+                      <thead>
+                        <tr>
+                          <th>Classification</th>
+                          <th>Cookie Name</th>
+                          <th>Provider</th>
+                          <th>Type</th>
+                          <th>Max Storage Duration</th>
+                          <th>First found URL</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(s.notBlocked || []).map((c, idx) => (
+                          <tr key={`${c.name}-${idx}`}>
+                            <td>{c.category}</td>
+                            <td className="projects-table__name">{c.name}</td>
+                            <td>{c.provider}</td>
+                            <td>{c.type}</td>
+                            <td className="projects-table__timeline">{c.duration}</td>
+                            <td>
+                              {c.firstUrl ? (
+                                <a href={c.firstUrl} target="_blank" rel="noopener noreferrer">
+                                  link ↗
+                                </a>
+                              ) : (
+                                "—"
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
             ) : null}
 
@@ -258,25 +350,31 @@ export default function SitesView({ adminUnlocked }) {
                     <th>Uploaded</th>
                     <th>Size</th>
                     <th>Cookies</th>
+                    <th>Not blocked</th>
                     <th className="projects-table__actions-col">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {reports.map((r) => (
-                    <tr key={r.id}>
+                  {reports.map((r, idx) => (
+                    <tr key={`${r.fileName}-${idx}`}>
                       <td className="projects-table__name">{r.fileName}</td>
-                      <td className="projects-table__timeline">{formatDate(r.uploadedAt)}</td>
-                      <td>{formatBytes(r.size)}</td>
-                      <td>{r.summary?.parsed ? r.summary.cookieCount : "—"}</td>
+                      <td className="projects-table__timeline">{formatDate(r.uploaded)}</td>
+                      <td>{r.size || "—"}</td>
+                      <td>{r.data?.total ?? "—"}</td>
+                      <td>{r.data?.notBlockedCount ?? "—"}</td>
                       <td className="projects-table__actions">
-                        <button type="button" className="projects-table__btn" onClick={() => handleDownload(r)}>
-                          Download
+                        <button
+                          type="button"
+                          className="projects-table__btn"
+                          onClick={() => handleExportCsv(r)}
+                        >
+                          CSV
                         </button>
                         {adminUnlocked ? (
                           <button
                             type="button"
                             className="projects-table__btn projects-table__btn--danger"
-                            onClick={() => handleDeleteReport(r.id)}
+                            onClick={() => handleDeleteReport(r)}
                           >
                             Delete
                           </button>

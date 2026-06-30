@@ -59,6 +59,11 @@ function doPost(e) {
     if (action === 'addpriority') return jsonResponse(addPriority_(body));
     if (action === 'deletepriority') return jsonResponse(deletePriority_(body));
 
+    if (action === 'addcookiebotsite') return jsonResponse(addCookiebotSite_(body));
+    if (action === 'deletecookiebotsite') return jsonResponse(deleteCookiebotSite_(body));
+    if (action === 'addcookiebotreport') return jsonResponse(addCookiebotReport_(body));
+    if (action === 'deletecookiebotreport') return jsonResponse(deleteCookiebotReport_(body));
+
     return jsonResponse({ ok: false, error: 'Unknown action: ' + action }, 400);
   } catch (err) {
     return jsonResponse({ ok: false, error: String(err && err.message || err) }, 400);
@@ -164,6 +169,8 @@ function readRoadmap_() {
     domains: readDomains_(),
     statuses: readStatuses_(),
     priorities: readPriorities_(),
+    cookiebotSites: readCookiebotSites_(),
+    cookiebotReports: readCookiebotReports_(),
   };
 }
 
@@ -543,6 +550,136 @@ function addPriority_(body) {
 }
 function deletePriority_(body) {
   return deleteDefRow_('priorit', String(body.label || body.id || '').trim());
+}
+
+/* ========================= Cookiebot Sites/Reports ======================== */
+
+function readCookiebotSites_() {
+  var sheet = getSheetByKeyword_('cookiebot site');
+  if (!sheet) return [];
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return [];
+  var map = headerMap_(sheet);
+  var nameC = colOf_(map, ['name', 'site', 'title']);
+  var domainC = colOf_(map, ['domain', 'url']);
+  var values = sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).getValues();
+  var out = [];
+  for (var r = 0; r < values.length; r++) {
+    var name = String(cell_(values[r], nameC) || '').trim();
+    if (!name) continue;
+    out.push({ name: name, domain: String(cell_(values[r], domainC) || '').trim() });
+  }
+  return out;
+}
+
+function readCookiebotReports_() {
+  var sheet = getSheetByKeyword_('cookiebot report');
+  if (!sheet) return [];
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return [];
+  var map = headerMap_(sheet);
+  var siteC = colOf_(map, ['site']);
+  var fileC = colOf_(map, ['file name', 'filename', 'file']);
+  var upC = colOf_(map, ['uploaded', 'uploaded at']);
+  var sizeC = colOf_(map, ['size']);
+  var dataC = colOf_(map, ['data (json)', 'data', 'json']);
+  var values = sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).getValues();
+  var out = [];
+  for (var r = 0; r < values.length; r++) {
+    var site = String(cell_(values[r], siteC) || '').trim();
+    var file = String(cell_(values[r], fileC) || '').trim();
+    if (!site && !file) continue;
+    var data = null;
+    var raw = String(cell_(values[r], dataC) || '').trim();
+    if (raw) { try { data = JSON.parse(raw); } catch (e) { data = null; } }
+    out.push({
+      site: site,
+      fileName: file,
+      uploaded: String(cell_(values[r], upC) || '').trim(),
+      size: String(cell_(values[r], sizeC) || '').trim(),
+      data: data,
+    });
+  }
+  return out;
+}
+
+function addCookiebotSite_(body) {
+  var name = String(body.name || '').trim();
+  var domain = String(body.domain || body.url || '').trim();
+  if (!name) throw new Error('Site name is required.');
+  var sheet = requireSheetByKeyword_('cookiebot site', 'Cookiebot Sites');
+  var map = headerMap_(sheet);
+  var nameC = colOf_(map, ['name', 'site', 'title']);
+  if (findRowByValue_(sheet, nameC, name) >= 0) throw new Error('Site already exists: ' + name);
+  var row = buildEmptyRow_(sheet);
+  setCol_(row, nameC, name);
+  setCol_(row, colOf_(map, ['domain', 'url']), domain);
+  sheet.appendRow(row);
+  return { ok: true };
+}
+
+function deleteCookiebotSite_(body) {
+  var name = String(body.name || '').trim();
+  if (!name) throw new Error('Site name is required.');
+  var sheet = requireSheetByKeyword_('cookiebot site', 'Cookiebot Sites');
+  var nameC = colOf_(headerMap_(sheet), ['name', 'site', 'title']);
+  var rowIndex = findRowByValue_(sheet, nameC, name);
+  if (rowIndex < 0) throw new Error('Site not found: ' + name);
+  sheet.deleteRow(rowIndex);
+  return { ok: true };
+}
+
+function addCookiebotReport_(body) {
+  var site = String(body.site || '').trim();
+  var fileName = String(body.fileName || body.file || '').trim();
+  if (!site) throw new Error('Site is required.');
+  if (!fileName) throw new Error('File name is required.');
+  var data = body.data;
+  var dataStr = typeof data === 'string' ? data : JSON.stringify(data || {});
+  var d = (typeof data === 'object' && data) ? data : {};
+
+  var sheet = requireSheetByKeyword_('cookiebot report', 'Cookiebot Reports');
+  var map = headerMap_(sheet);
+  var row = buildEmptyRow_(sheet);
+  setCol_(row, colOf_(map, ['site']), site);
+  setCol_(row, colOf_(map, ['file name', 'filename', 'file']), fileName);
+  setCol_(row, colOf_(map, ['uploaded', 'uploaded at']), String(body.uploaded || ''));
+  setCol_(row, colOf_(map, ['size']), String(body.size || ''));
+  setCol_(row, colOf_(map, ['domain']), String(d.domain || ''));
+  setCol_(row, colOf_(map, ['scan date']), String(d.scanDate || ''));
+  setCol_(row, colOf_(map, ['total cookies']), String(d.total || ''));
+  setCol_(row, colOf_(map, ['new']), String(d.newCookies || ''));
+  setCol_(row, colOf_(map, ['removed']), String(d.removedCookies || ''));
+  setCol_(row, colOf_(map, ['not blocked']), String(d.notBlockedCount || 0));
+  setCol_(row, colOf_(map, ['server']), String(d.serverLocation || ''));
+  setCol_(row, colOf_(map, ['gcm risk']), String((d.gcm && d.gcm.riskSummary) || ''));
+  setCol_(row, colOf_(map, ['data (json)', 'data', 'json']), dataStr);
+  sheet.appendRow(row);
+  return { ok: true };
+}
+
+function deleteCookiebotReport_(body) {
+  var site = String(body.site || '').trim().toLowerCase();
+  var fileName = String(body.fileName || body.file || '').trim().toLowerCase();
+  var uploaded = String(body.uploaded || '').trim().toLowerCase();
+  var sheet = requireSheetByKeyword_('cookiebot report', 'Cookiebot Reports');
+  var map = headerMap_(sheet);
+  var siteC = colOf_(map, ['site']);
+  var fileC = colOf_(map, ['file name', 'filename', 'file']);
+  var upC = colOf_(map, ['uploaded', 'uploaded at']);
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) throw new Error('No reports.');
+  var values = sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).getValues();
+  for (var r = 0; r < values.length; r++) {
+    var s = String(cell_(values[r], siteC) || '').trim().toLowerCase();
+    var f = String(cell_(values[r], fileC) || '').trim().toLowerCase();
+    var u = String(cell_(values[r], upC) || '').trim().toLowerCase();
+    if (s === site && f === fileName && (!uploaded || u === uploaded)) {
+      sheet.deleteRow(r + 2);
+      return { ok: true };
+    }
+  }
+  throw new Error('Report not found.');
 }
 
 /* ================================ Plumbing ================================ */
