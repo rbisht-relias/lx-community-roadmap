@@ -7,34 +7,48 @@ import {
   getStoredAdminToken,
   setStoredAdminToken,
 } from "./utils/adminAuth";
-import Header from "./components/Header";
+import Sidebar from "./components/Sidebar";
 import DeleteOverlay from "./components/DeleteOverlay";
 import LoadingScreen from "./components/LoadingScreen";
 import Filters from "./components/Filters";
 import RoadmapGrid from "./components/RoadmapGrid";
+import ProjectsTable from "./components/ProjectsTable";
+import OverviewView from "./components/views/OverviewView";
+import SitesView from "./components/views/SitesView";
+import ProjectDetail from "./components/ProjectDetail";
 import InitiativeTooltip from "./components/InitiativeTooltip";
 import { useRoadmapData } from "./hooks/useRoadmapData";
 import { useTheme } from "./hooks/useTheme";
 import { resolveStatus } from "./config/statusConfig";
 import {
   deleteInitiative,
-  getGoogleSheetUrl,
   getTeamOptionsForAdmin,
   getValidTeamIds,
   getValidStatusLabels,
   hasSheetsApi,
+  isLocalMode,
   updateInitiativeStatus,
 } from "./services/sheetsApi";
 import {
-  getSubtitle,
+  getQuarterRangeLabel,
   getDomainKeys,
   INITIAL_FILTER_STATE,
 } from "./utils/roadmapUtils";
+
+const VIEW_TITLES = {
+  overview: "Overview",
+  timeline: "Roadmap",
+  table: "Projects",
+  sites: "Sites & Cookiebot",
+};
 
 export default function App() {
   const { preference: themePreference, setThemePreference } = useTheme();
   const { data, quarters, loading, error, refetch, patchInitiative } = useRoadmapData();
   const [loaderVisible, setLoaderVisible] = useState(true);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [view, setView] = useState("overview");
+  const [selectedProject, setSelectedProject] = useState(null);
   const [filterState, setFilterState] = useState(INITIAL_FILTER_STATE);
   const [tooltip, setTooltip] = useState({ item: null, target: null, domain: null });
   const hideTooltipTimerRef = useRef(null);
@@ -43,7 +57,7 @@ export default function App() {
   const [editTarget, setEditTarget] = useState(null);
   const [teamsAdminOpen, setTeamsAdminOpen] = useState(false);
   const [adminToken, setAdminToken] = useState(
-    () => applyAdminTokenFromUrl() || getStoredAdminToken()
+    () => applyAdminTokenFromUrl() || getStoredAdminToken() || (isLocalMode() ? "local" : "")
   );
   const [deleteOverlayVisible, setDeleteOverlayVisible] = useState(false);
 
@@ -130,6 +144,18 @@ export default function App() {
     [adminToken]
   );
 
+  const handleDeleteFromTable = useCallback(
+    async ({ team, id }) => {
+      if (!window.confirm(`Delete "${id}"? This cannot be undone.`)) return;
+      try {
+        await handleDeleteInitiative({ team, id });
+      } catch (err) {
+        window.alert(err.message || "Failed to delete.");
+      }
+    },
+    [handleDeleteInitiative]
+  );
+
   const handleAdminSuccess = useCallback(() => {
     refetch();
   }, [refetch]);
@@ -142,6 +168,10 @@ export default function App() {
   const handleCloseAdd = useCallback(() => {
     setAdminOpen(false);
     setAddPrefill(null);
+  }, []);
+
+  const handleSelectProject = useCallback(({ domain, id }) => {
+    setSelectedProject({ domain, id });
   }, []);
 
   const handleEditInitiative = useCallback(({ domain, item }) => {
@@ -170,13 +200,15 @@ export default function App() {
 
   useEffect(() => () => clearHideTooltipTimer(), [clearHideTooltipTimer]);
 
-  const subtitle =
-    data && quarters.length ? getSubtitle(quarters, filterState) : "";
   const showAdmin = hasSheetsApi();
-  const googleSheetUrl = getGoogleSheetUrl();
-  const showGoogleSheetLink = Boolean(adminToken && googleSheetUrl);
-  const canDeleteInitiatives = Boolean(showAdmin && adminToken);
-  const canEditStatus = Boolean(showAdmin && adminToken);
+  const adminUnlocked = Boolean(showAdmin && adminToken);
+  const canDeleteInitiatives = adminUnlocked;
+  const canEditStatus = adminUnlocked;
+
+  const openAddModal = useCallback(() => {
+    setAddPrefill(null);
+    setAdminOpen(true);
+  }, []);
 
   const handleStatusChange = useCallback(
     async ({ domain, id, status }) => {
@@ -192,39 +224,21 @@ export default function App() {
       };
 
       const resolved = resolveStatus(status, data?.statuses);
-      const optimistic = {
-        status: resolved.label,
-        color: resolved.color,
-      };
+      const optimistic = { status: resolved.label, color: resolved.color };
 
       patchInitiative(domain, id, optimistic);
       setTooltip((prev) => {
-        if (!prev.item || prev.item.id !== id || prev.domain !== domain) {
-          return prev;
-        }
-        return {
-          ...prev,
-          item: { ...prev.item, ...optimistic },
-        };
+        if (!prev.item || prev.item.id !== id || prev.domain !== domain) return prev;
+        return { ...prev, item: { ...prev.item, ...optimistic } };
       });
 
       try {
-        await updateInitiativeStatus({
-          adminToken,
-          team: domain,
-          id,
-          status,
-        });
+        await updateInitiativeStatus({ adminToken, team: domain, id, status });
       } catch (err) {
         patchInitiative(domain, id, snapshot);
         setTooltip((prev) => {
-          if (!prev.item || prev.item.id !== id || prev.domain !== domain) {
-            return prev;
-          }
-          return {
-            ...prev,
-            item: { ...prev.item, ...snapshot },
-          };
+          if (!prev.item || prev.item.id !== id || prev.domain !== domain) return prev;
+          return { ...prev, item: { ...prev.item, ...snapshot } };
         });
         throw err;
       }
@@ -233,77 +247,137 @@ export default function App() {
   );
 
   if (loaderVisible) {
-    return (
-      <LoadingScreen
-        pending={loading}
-        onFinish={() => setLoaderVisible(false)}
-      />
-    );
+    return <LoadingScreen pending={loading} onFinish={() => setLoaderVisible(false)} />;
   }
 
+  const pageTitle = VIEW_TITLES[view] || "Roadmap";
+  const subtitle =
+    view === "timeline" && quarters.length ? getQuarterRangeLabel(quarters) : "";
+  const showFilters = view === "timeline" || view === "table";
+  const showTopbarAdd = showAdmin && view !== "sites";
+
   return (
-    <div className="roadmap">
+    <div className="app">
       {deleteOverlayVisible ? <DeleteOverlay /> : null}
-      <Header
-        subtitle={subtitle}
+
+      <Sidebar
+        view={view}
+        onNavigate={setView}
+        collapsed={sidebarCollapsed}
         themePreference={themePreference}
         onThemeChange={setThemePreference}
-        onAddClick={
-          showAdmin
-            ? () => {
-                setAddPrefill(null);
-                setAdminOpen(true);
-              }
-            : undefined
-        }
+        onAddClick={showAdmin ? openAddModal : undefined}
         onManageTeamsClick={showAdmin ? () => setTeamsAdminOpen(true) : undefined}
-        googleSheetUrl={showGoogleSheetLink ? googleSheetUrl : undefined}
       />
 
-      {error && <p className="roadmap__error">{error}</p>}
-
-      {data && !error && (
-        <>
-          <Filters
-            data={data}
-            filterState={filterState}
-            onDomainChange={handleDomainChange}
-            onInitiativeChange={handleInitiativeChange}
-            onTeamsChange={handleTeamsChange}
-            onStatusesChange={handleStatusesChange}
-            onPrioritiesChange={handlePrioritiesChange}
-            onClear={handleClearFilters}
-          />
-          <div className="roadmap__scroll">
-            <RoadmapGrid
-              data={data}
-              quarters={quarters}
-              filterState={filterState}
-              onShowTooltip={handleShowTooltip}
-              onHideTooltip={handleHideTooltip}
-              canCreate={canEditStatus}
-              onCreateRange={canEditStatus ? handleCreateRange : undefined}
-            />
+      <main className="app__main">
+        <header className="app__topbar">
+          <div className="app__topbar-text">
+            <button
+              type="button"
+              className="app__sidebar-toggle"
+              aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+              aria-pressed={sidebarCollapsed}
+              onClick={() => setSidebarCollapsed((c) => !c)}
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M3 5h18M3 12h18M3 19h18" />
+              </svg>
+            </button>
+            <div>
+              <h1 className="app__page-title">{pageTitle}</h1>
+              {subtitle ? <p className="app__page-subtitle">{subtitle}</p> : null}
+            </div>
           </div>
-          <InitiativeTooltip
-            item={tooltip.item}
-            target={tooltip.target}
-            domain={tooltip.domain}
-            statuses={data.statuses || []}
-            priorities={data.priorities || []}
-            canEditStatus={canEditStatus}
-            canEdit={canEditStatus}
-            canDelete={canDeleteInitiatives}
-            onStatusChange={canEditStatus ? handleStatusChange : undefined}
-            onEdit={canEditStatus ? handleEditInitiative : undefined}
-            onDelete={canDeleteInitiatives ? handleDeleteInitiative : undefined}
-            onDeleteStart={canDeleteInitiatives ? handleDeleteStart : undefined}
-            onDeleteError={canDeleteInitiatives ? handleDeleteError : undefined}
-            onTooltipEnter={handleTooltipEnter}
-            onTooltipLeave={handleHideTooltip}
-          />
-        </>
-      )}
+          {showTopbarAdd ? (
+            <button type="button" className="app__add-btn" onClick={openAddModal}>
+              + Add project
+            </button>
+          ) : null}
+        </header>
+
+        <div className="app__content theme-scroll">
+          {error ? <p className="roadmap__error">{error}</p> : null}
+
+          {data && !error ? (
+            view === "overview" ? (
+              <OverviewView data={data} onSelectProject={handleSelectProject} />
+            ) : view === "sites" ? (
+              <SitesView adminUnlocked={adminUnlocked} />
+            ) : (
+              <>
+                {showFilters ? (
+                  <Filters
+                    data={data}
+                    filterState={filterState}
+                    onDomainChange={handleDomainChange}
+                    onInitiativeChange={handleInitiativeChange}
+                    onTeamsChange={handleTeamsChange}
+                    onStatusesChange={handleStatusesChange}
+                    onPrioritiesChange={handlePrioritiesChange}
+                    onClear={handleClearFilters}
+                  />
+                ) : null}
+
+                {view === "timeline" ? (
+                  <div className="roadmap__scroll">
+                    <RoadmapGrid
+                      data={data}
+                      quarters={quarters}
+                      filterState={filterState}
+                      onShowTooltip={handleShowTooltip}
+                      onHideTooltip={handleHideTooltip}
+                      onSelect={handleSelectProject}
+                      canCreate={canEditStatus}
+                      onCreateRange={canEditStatus ? handleCreateRange : undefined}
+                    />
+                  </div>
+                ) : (
+                  <ProjectsTable
+                    data={data}
+                    filterState={filterState}
+                    canEdit={canEditStatus}
+                    canDelete={canDeleteInitiatives}
+                    onSelect={handleSelectProject}
+                    onEdit={canEditStatus ? handleEditInitiative : undefined}
+                    onDelete={canDeleteInitiatives ? handleDeleteFromTable : undefined}
+                  />
+                )}
+              </>
+            )
+          ) : null}
+        </div>
+      </main>
+
+      {data ? (
+        <ProjectDetail
+          data={data}
+          selected={selectedProject}
+          canEdit={canEditStatus}
+          canDelete={canDeleteInitiatives}
+          onEdit={handleEditInitiative}
+          onDelete={handleDeleteFromTable}
+          onClose={() => setSelectedProject(null)}
+        />
+      ) : null}
+
+      <InitiativeTooltip
+        item={tooltip.item}
+        target={tooltip.target}
+        domain={tooltip.domain}
+        statuses={data?.statuses || []}
+        priorities={data?.priorities || []}
+        canEditStatus={canEditStatus}
+        canEdit={canEditStatus}
+        canDelete={canDeleteInitiatives}
+        onStatusChange={canEditStatus ? handleStatusChange : undefined}
+        onEdit={canEditStatus ? handleEditInitiative : undefined}
+        onDelete={canDeleteInitiatives ? handleDeleteInitiative : undefined}
+        onDeleteStart={canDeleteInitiatives ? handleDeleteStart : undefined}
+        onDeleteError={canDeleteInitiatives ? handleDeleteError : undefined}
+        onTooltipEnter={handleTooltipEnter}
+        onTooltipLeave={handleHideTooltip}
+      />
 
       {adminOpen && data ? (
         <AdminModal

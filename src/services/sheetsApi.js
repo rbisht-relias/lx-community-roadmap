@@ -1,17 +1,36 @@
 import { resolveStatusDefinitions } from "../config/statusConfig";
 import { resolvePriorityDefinitions, getValidPriorityLabels } from "../config/priorityConfig";
 import { ROADMAP_DEFAULTS } from "../config/roadmapDefaults";
+import { getRoadmap as getLocalRoadmap, postToLocal } from "../db/database";
 
 function getApiUrl() {
   const url = import.meta.env.VITE_SHEETS_API_URL;
   return url ? String(url).trim().replace(/\/$/, "") : "";
 }
 
+/** "local" (dummy data) or "remote" (Google Sheets today, Microsoft later). */
+export function getDataSource() {
+  const explicit = String(import.meta.env.VITE_DATA_SOURCE || "").trim().toLowerCase();
+  if (explicit === "local" || explicit === "remote") return explicit;
+  return getApiUrl() ? "remote" : "local";
+}
+
+function isLocal() {
+  return getDataSource() === "local";
+}
+
+/** True when running on the local in-browser DB (no auth / lock needed). */
+export function isLocalMode() {
+  return isLocal();
+}
+
+/** True when admin (add/edit/delete) features should be available. */
 export function hasSheetsApi() {
-  return Boolean(getApiUrl());
+  return isLocal() || Boolean(getApiUrl());
 }
 
 export function getGoogleSheetUrl() {
+  if (isLocal()) return "";
   const url = import.meta.env.VITE_GOOGLE_SHEET_URL;
   return url ? String(url).trim() : "";
 }
@@ -76,6 +95,10 @@ async function parseJsonResponse(res) {
 }
 
 export async function fetchRoadmap() {
+  if (isLocal()) {
+    return mergeRoadmapData(await getLocalRoadmap());
+  }
+
   const apiUrl = getApiUrl();
   if (!apiUrl) {
     throw new Error(
@@ -89,6 +112,11 @@ export async function fetchRoadmap() {
 }
 
 async function postToSheetsApi(payload) {
+  if (isLocal()) {
+    // Mirror the remote contract: throws on error, returns the result object.
+    return postToLocal(payload);
+  }
+
   const apiUrl = getApiUrl();
   if (!apiUrl) {
     throw new Error(

@@ -14,7 +14,7 @@ export function timelinePositionToCss(position, quarterCount) {
   return `calc(${full} * (${colExpr} + 1px) + ${frac} * ${colExpr})`;
 }
 
-export default function InitiativeBar({ item, category, filterState, onShowTooltip, onHideTooltip }) {
+export default function InitiativeBar({ item, category, filterState, onShowTooltip, onHideTooltip, onSelect }) {
   const filterActive = isFilterActive(filterState);
   const matched = filterActive && initiativeMatchesFilter(item, category, filterState);
   const dimmed = filterActive && !matched;
@@ -48,11 +48,23 @@ export default function InitiativeBar({ item, category, filterState, onShowToolt
         width,
       }}
       tabIndex={0}
+      role={onSelect ? "button" : undefined}
       aria-label={ariaLabel}
       onMouseEnter={(e) => onShowTooltip(item, e.currentTarget, category)}
       onMouseLeave={onHideTooltip}
       onFocus={(e) => onShowTooltip(item, e.currentTarget, category)}
       onBlur={onHideTooltip}
+      onClick={onSelect ? () => onSelect({ domain: category, id: item.id }) : undefined}
+      onKeyDown={
+        onSelect
+          ? (e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                onSelect({ domain: category, id: item.id });
+              }
+            }
+          : undefined
+      }
     >
       {item.name}
     </div>

@@ -39,7 +39,6 @@ export default function AdminModal({
   validPriorityLabels = [],
   adminToken,
   onUnlock,
-  onLock,
   onClose,
   onSuccess,
 }) {
@@ -60,11 +59,6 @@ export default function AdminModal({
     },
     [onUnlock, tokenInput]
   );
-
-  const handleLogout = useCallback(() => {
-    onLock();
-    setTokenInput("");
-  }, [onLock]);
 
   const updateField = useCallback((name, value) => {
     setForm((prev) => ({ ...prev, [name]: value }));
@@ -213,18 +207,6 @@ export default function AdminModal({
         ) : (
           <form className="admin-modal__form" onSubmit={handleSubmit}>
             <div className="admin-modal__scroll theme-scroll">
-              <div className="admin-modal__status">
-                <span className="admin-modal__status-dot" aria-hidden="true" />
-                <span className="admin-modal__unlocked">Admin unlocked</span>
-                <button
-                  type="button"
-                  className="admin-btn admin-btn--ghost admin-btn--small"
-                  onClick={handleLogout}
-                >
-                  Lock
-                </button>
-              </div>
-
             <label className="admin-field">
               <span className="admin-field__label">
                 Domain <span className="admin-field__req">*</span>

@@ -13,7 +13,6 @@ export default function TeamsAdminModal({
   teams,
   adminToken,
   onUnlock,
-  onLock,
   onClose,
   onSuccess,
 }) {
@@ -34,11 +33,6 @@ export default function TeamsAdminModal({
     },
     [onUnlock, tokenInput]
   );
-
-  const handleLogout = useCallback(() => {
-    onLock();
-    setTokenInput("");
-  }, [onLock]);
 
   const updateField = useCallback((name, value) => {
     setForm((prev) => ({ ...prev, [name]: value }));
@@ -162,18 +156,6 @@ export default function TeamsAdminModal({
         ) : (
           <>
             <div className="admin-modal__scroll theme-scroll">
-              <div className="admin-modal__status">
-                <span className="admin-modal__status-dot" aria-hidden="true" />
-                <span className="admin-modal__unlocked">Admin unlocked</span>
-                <button
-                  type="button"
-                  className="admin-btn admin-btn--ghost admin-btn--small"
-                  onClick={handleLogout}
-                >
-                  Lock
-                </button>
-              </div>
-
               <form className="admin-teams-form" onSubmit={handleAddTeam}>
                 <h3 className="admin-teams-form__heading">Add team</h3>
                 <label className="admin-field">

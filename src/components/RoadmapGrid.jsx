@@ -53,6 +53,7 @@ export default function RoadmapGrid({
   filterState,
   onShowTooltip,
   onHideTooltip,
+  onSelect,
   canCreate = false,
   onCreateRange,
 }) {
@@ -218,6 +219,7 @@ export default function RoadmapGrid({
                     filterState={filterState}
                     onShowTooltip={onShowTooltip}
                     onHideTooltip={onHideTooltip}
+                    onSelect={onSelect}
                   />
                 ))}
               </div>
