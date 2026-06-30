@@ -15,6 +15,7 @@ import RoadmapGrid from "./components/RoadmapGrid";
 import ProjectsTable from "./components/ProjectsTable";
 import OverviewView from "./components/views/OverviewView";
 import SitesView from "./components/views/SitesView";
+import SettingsView from "./components/views/SettingsView";
 import ProjectDetail from "./components/ProjectDetail";
 import InitiativeTooltip from "./components/InitiativeTooltip";
 import { useRoadmapData } from "./hooks/useRoadmapData";
@@ -40,14 +41,36 @@ const VIEW_TITLES = {
   timeline: "Roadmap",
   table: "Projects",
   sites: "Sites & Cookiebot",
+  settings: "Settings",
 };
+
+const VIEW_STORAGE_KEY = "roadmap_active_view";
+const SIDEBAR_STORAGE_KEY = "roadmap_sidebar_collapsed";
+
+function getInitialView() {
+  try {
+    const saved = localStorage.getItem(VIEW_STORAGE_KEY);
+    if (saved && VIEW_TITLES[saved]) return saved;
+  } catch {
+    /* ignore */
+  }
+  return "overview";
+}
+
+function getInitialCollapsed() {
+  try {
+    return localStorage.getItem(SIDEBAR_STORAGE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
 
 export default function App() {
   const { preference: themePreference, setThemePreference } = useTheme();
   const { data, quarters, loading, error, refetch, patchInitiative } = useRoadmapData();
   const [loaderVisible, setLoaderVisible] = useState(true);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [view, setView] = useState("overview");
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(getInitialCollapsed);
+  const [view, setView] = useState(getInitialView);
   const [selectedProject, setSelectedProject] = useState(null);
   const [filterState, setFilterState] = useState(INITIAL_FILTER_STATE);
   const [tooltip, setTooltip] = useState({ item: null, target: null, domain: null });
@@ -198,6 +221,22 @@ export default function App() {
     if (loading) setLoaderVisible(true);
   }, [loading]);
 
+  useEffect(() => {
+    try {
+      localStorage.setItem(VIEW_STORAGE_KEY, view);
+    } catch {
+      /* ignore */
+    }
+  }, [view]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(SIDEBAR_STORAGE_KEY, sidebarCollapsed ? "1" : "0");
+    } catch {
+      /* ignore */
+    }
+  }, [sidebarCollapsed]);
+
   useEffect(() => () => clearHideTooltipTimer(), [clearHideTooltipTimer]);
 
   const showAdmin = hasSheetsApi();
@@ -254,7 +293,7 @@ export default function App() {
   const subtitle =
     view === "timeline" && quarters.length ? getQuarterRangeLabel(quarters) : "";
   const showFilters = view === "timeline" || view === "table";
-  const showTopbarAdd = showAdmin && view !== "sites";
+  const showTopbarAdd = showAdmin && view !== "sites" && view !== "settings";
 
   return (
     <div className="app">
@@ -304,6 +343,8 @@ export default function App() {
               <OverviewView data={data} onSelectProject={handleSelectProject} />
             ) : view === "sites" ? (
               <SitesView adminUnlocked={adminUnlocked} />
+            ) : view === "settings" ? (
+              <SettingsView onChange={refetch} />
             ) : (
               <>
                 {showFilters ? (

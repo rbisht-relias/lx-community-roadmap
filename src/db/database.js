@@ -25,8 +25,34 @@ db.version(1).stores({
   reports: "++id, siteId, uploadedAt",
 });
 
+// v2 adds editable taxonomy: domains, statuses, priorities.
+db.version(2)
+  .stores({
+    domains: "id",
+    statuses: "id, order",
+    priorities: "id, order",
+  })
+  .upgrade(async (tx) => {
+    const projects = await tx.table("projects").toArray();
+    const domainIds = [...new Set(projects.map((p) => p.domain))];
+    if (domainIds.length === 0) SEED_DOMAINS.forEach((d) => domainIds.push(d.id));
+    await tx.table("domains").bulkAdd(
+      domainIds.map((id) => ({ id, name: id }))
+    );
+    await tx.table("statuses").bulkAdd(SEED_STATUSES.map((s) => ({ ...s })));
+    await tx.table("priorities").bulkAdd(SEED_PRIORITIES.map((p) => ({ ...p })));
+  });
+
 function projectKey(domain, id) {
   return `${String(domain).toLowerCase()}::${String(id)}`;
+}
+
+function slug(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
 }
 
 const SEED_TEAMS = [
@@ -51,12 +77,24 @@ const SEED_SITES = [
   { name: "Docs portal", url: "https://docs.example.com" },
 ];
 
+const SEED_DOMAINS = [
+  { id: "platform", name: "Platform" },
+  { id: "marketing", name: "Marketing" },
+  { id: "mobile", name: "Mobile" },
+];
+
+const SEED_STATUSES = DEFAULT_STATUSES.map((s, i) => ({ ...s, order: i }));
+const SEED_PRIORITIES = DEFAULT_PRIORITIES.map((p, i) => ({ ...p, order: i }));
+
 db.on("populate", () => {
   db.teams.bulkAdd(SEED_TEAMS.map((t) => ({ ...t })));
   db.projects.bulkAdd(
     SEED_PROJECTS.map((p) => ({ ...p, key: projectKey(p.domain, p.id) }))
   );
   db.sites.bulkAdd(SEED_SITES.map((s) => ({ ...s })));
+  db.domains.bulkAdd(SEED_DOMAINS.map((d) => ({ ...d })));
+  db.statuses.bulkAdd(SEED_STATUSES.map((s) => ({ ...s })));
+  db.priorities.bulkAdd(SEED_PRIORITIES.map((p) => ({ ...p })));
 });
 
 /** Strip the internal storage key + domain before handing a project to the UI. */
@@ -69,18 +107,34 @@ function toInitiative(row) {
 
 /* ------------------------------- Roadmap ------------------------------- */
 
+const byOrder = (a, b) => (a.order ?? 0) - (b.order ?? 0);
+
 /** Assemble the nested payload the rest of the app expects. */
 export async function getRoadmap() {
-  const [projects, teams] = await Promise.all([db.projects.toArray(), db.teams.toArray()]);
+  const [projects, teams, domains, statuses, priorities] = await Promise.all([
+    db.projects.toArray(),
+    db.teams.toArray(),
+    db.domains.toArray(),
+    db.statuses.toArray(),
+    db.priorities.toArray(),
+  ]);
+
+  const statusDefs = statuses.length ? statuses.slice().sort(byOrder) : DEFAULT_STATUSES;
+  const priorityDefs = priorities.length ? priorities.slice().sort(byOrder) : DEFAULT_PRIORITIES;
+
   const payload = {
     teams: teams.map((t) => ({ ...t })),
-    statuses: DEFAULT_STATUSES.map((s) => ({ ...s })),
-    priorities: DEFAULT_PRIORITIES.map((p) => ({ ...p })),
+    statuses: statusDefs.map((s) => ({ id: s.id, label: s.label, color: s.color })),
+    priorities: priorityDefs.map((p) => ({ id: p.id, label: p.label, color: p.color })),
   };
+
+  // Ensure every defined domain appears, even with no projects yet.
+  domains.forEach((d) => {
+    payload[d.id] = [];
+  });
   projects.forEach((row) => {
-    const domain = row.domain;
-    if (!payload[domain]) payload[domain] = [];
-    payload[domain].push(toInitiative(row));
+    if (!payload[row.domain]) payload[row.domain] = [];
+    payload[row.domain].push(toInitiative(row));
   });
   return payload;
 }
@@ -241,4 +295,94 @@ export async function deleteReport(id) {
 export async function getReportBlob(id) {
   const row = await db.reports.get(id);
   return row?.blob || null;
+}
+
+/* ----------------------- Taxonomy (Settings) -------------------------- */
+
+async function projectsUsingDomain(domainId) {
+  return db.projects.where("domain").equals(domainId).count();
+}
+
+export function listDomains() {
+  return db.domains.toArray();
+}
+
+export async function createDomain(name) {
+  const clean = String(name || "").trim();
+  if (!clean) throw new Error("Domain name is required.");
+  const id = slug(clean);
+  if (!id) throw new Error("Domain name must contain letters or numbers.");
+  if (await db.domains.get(id)) throw new Error(`Domain already exists: ${clean}`);
+  await db.domains.add({ id, name: clean });
+  return id;
+}
+
+export async function deleteDomain(id) {
+  const count = await projectsUsingDomain(id);
+  if (count > 0) {
+    throw new Error(`Cannot delete: ${count} project(s) still use this domain.`);
+  }
+  await db.domains.delete(id);
+}
+
+export function listTeams() {
+  return db.teams.toArray();
+}
+
+export async function createTeam({ name, color }) {
+  const clean = String(name || "").trim();
+  if (!clean) throw new Error("Team name is required.");
+  const id = slug(clean);
+  if (!id) throw new Error("Team name must contain letters or numbers.");
+  if (await db.teams.get(id)) throw new Error(`Team already exists: ${clean}`);
+  await db.teams.add({ id, label: clean, color: String(color || "").trim() || "#64748b" });
+  return id;
+}
+
+export async function deleteTeamById(id) {
+  const projects = await db.projects.toArray();
+  const used = projects.some((p) =>
+    parseTeams(p.teams).some((t) => t.toLowerCase() === String(id).toLowerCase())
+  );
+  if (used) throw new Error("Cannot delete: team is assigned to projects.");
+  await db.teams.delete(id);
+}
+
+async function nextOrder(table) {
+  const rows = await table.toArray();
+  return rows.reduce((max, r) => Math.max(max, r.order ?? 0), -1) + 1;
+}
+
+export function listStatuses() {
+  return db.statuses.orderBy("order").toArray();
+}
+
+export async function createStatus({ label, color }) {
+  const clean = String(label || "").trim();
+  if (!clean) throw new Error("Status name is required.");
+  const id = slug(clean);
+  if (await db.statuses.get(id)) throw new Error(`Status already exists: ${clean}`);
+  await db.statuses.add({ id, label: clean, color: String(color || "").trim() || "#64748b", order: await nextOrder(db.statuses) });
+  return id;
+}
+
+export async function deleteStatusDef(id) {
+  await db.statuses.delete(id);
+}
+
+export function listPriorities() {
+  return db.priorities.orderBy("order").toArray();
+}
+
+export async function createPriority({ label, color }) {
+  const clean = String(label || "").trim();
+  if (!clean) throw new Error("Priority name is required.");
+  const id = slug(clean);
+  if (await db.priorities.get(id)) throw new Error(`Priority already exists: ${clean}`);
+  await db.priorities.add({ id, label: clean, color: String(color || "").trim() || "#64748b", order: await nextOrder(db.priorities) });
+  return id;
+}
+
+export async function deletePriorityDef(id) {
+  await db.priorities.delete(id);
 }

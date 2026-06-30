@@ -2447,3 +2447,95 @@ html, body, #root { height: 100%; }
   .sidebar--collapsed .sidebar__brand-text,
   .sidebar--collapsed .sidebar__link-text { display: inline; }
 }
+
+/* ---------- Settings view ---------- */
+.settings { display: flex; flex-direction: column; gap: 16px; }
+.settings__intro { font-size: 0.85rem; color: var(--text-muted); max-width: 70ch; }
+
+.settings__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+}
+
+.settings-card {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-elevated);
+  padding: 18px;
+}
+
+.settings-card__title { font-size: 0.95rem; font-weight: 700; }
+.settings-card__desc { margin-top: 2px; font-size: 0.78rem; color: var(--text-muted); }
+.settings-card__error { margin-top: 8px; font-size: 0.75rem; color: var(--error); }
+
+.settings-list { list-style: none; margin: 14px 0; display: flex; flex-direction: column; gap: 4px; }
+.settings-list__empty { font-size: 0.82rem; color: var(--text-muted); padding: 4px 2px; }
+
+.settings-list__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.settings-list__label { display: inline-flex; align-items: center; gap: 9px; font-size: 0.84rem; font-weight: 500; }
+.settings-list__swatch { width: 14px; height: 14px; border-radius: 4px; flex-shrink: 0; }
+
+.settings-list__del {
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.settings-list__del:hover { background: var(--surface-hover); color: var(--error); }
+
+.settings-add { display: flex; gap: 8px; margin-top: auto; }
+
+.settings-add__input {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.82rem;
+}
+
+.settings-add__color {
+  width: 36px;
+  height: 36px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.settings-add__btn {
+  padding: 8px 16px;
+  border: 1px solid var(--accent);
+  border-radius: 7px;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+  font-family: inherit;
+  font-size: 0.82rem;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.settings-add__btn:hover { background: var(--accent); filter: brightness(1.05); }
