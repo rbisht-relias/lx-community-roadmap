@@ -1,5 +1,10 @@
 import { useState } from "react";
-import { getDomainKeys, formatDomainLabel, parseInitiativeTeams } from "../../utils/roadmapUtils";
+import {
+  getDomainKeys,
+  formatDomainLabel,
+  parseInitiativeTeams,
+  RESERVED_DATA_KEYS,
+} from "../../utils/roadmapUtils";
 import {
   addDomain,
   deleteDomain,
@@ -65,6 +70,9 @@ function SettingsSection({
     setRemovingId(item.id); // trigger fade-out
     setTimeout(() => {
       onDelete(item); // optimistic remove + background write
+      // Clear the marker so the row isn't stuck faded if a failed write
+      // rolls the deletion back and the row reappears.
+      setRemovingId((current) => (current === item.id ? null : current));
     }, EXIT_MS);
   };
 
@@ -160,6 +168,9 @@ export default function SettingsView({ data, adminToken, applyRoadmap, refetch }
   const addDomainHandler = ({ label }) => {
     const id = slugify(label);
     if (!id) throw new Error("Domain name must contain letters or numbers.");
+    if (RESERVED_DATA_KEYS.has(id)) {
+      throw new Error(`"${label}" is a reserved name — pick a different one.`);
+    }
     if (data[id]) throw new Error(`Domain already exists: ${label}`);
     optimistic({ ...data, [id]: [] }, () => addDomain({ adminToken, name: label }));
   };
@@ -210,6 +221,14 @@ export default function SettingsView({ data, adminToken, applyRoadmap, refetch }
       () => deleteStatusDef({ adminToken, label: item.label })
     );
   };
+  const validateStatusDelete = (item) => {
+    const inUse = getDomainKeys(data).some((d) =>
+      (data[d] || []).some(
+        (p) => String(p.status || "").trim().toLowerCase() === item.label.toLowerCase()
+      )
+    );
+    if (inUse) throw new Error("Status is in use by projects.");
+  };
 
   /* ---- Priorities ---- */
   const addPriorityHandler = ({ label, color }) => {
@@ -226,6 +245,14 @@ export default function SettingsView({ data, adminToken, applyRoadmap, refetch }
       { ...data, priorities: (data.priorities || []).filter((p) => p.label !== item.label) },
       () => deletePriorityDef({ adminToken, label: item.label })
     );
+  };
+  const validatePriorityDelete = (item) => {
+    const inUse = getDomainKeys(data).some((d) =>
+      (data[d] || []).some(
+        (p) => String(p.priority || "").trim().toLowerCase() === item.label.toLowerCase()
+      )
+    );
+    if (inUse) throw new Error("Priority is in use by projects.");
   };
 
   const sheetUrl = getGoogleSheetUrl();
@@ -282,6 +309,7 @@ export default function SettingsView({ data, adminToken, applyRoadmap, refetch }
           placeholder="e.g. In Review"
           onAdd={addStatusHandler}
           onDelete={deleteStatusHandler}
+          validateDelete={validateStatusDelete}
         />
         <SettingsSection
           title="Priorities"
@@ -291,6 +319,7 @@ export default function SettingsView({ data, adminToken, applyRoadmap, refetch }
           placeholder="e.g. Critical"
           onAdd={addPriorityHandler}
           onDelete={deletePriorityHandler}
+          validateDelete={validatePriorityDelete}
         />
       </div>
     </div>

@@ -38,6 +38,18 @@ function doGet(e) {
 }
 
 function doPost(e) {
+  // Serialize writes: without a lock, two concurrent adds can both pass the
+  // duplicate-ID check and both append.
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    return doPostLocked_(e);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function doPostLocked_(e) {
   try {
     var body = parsePostBody_(e);
     if (!body.adminToken || body.adminToken !== getAdminToken_()) {
@@ -138,6 +150,29 @@ function findRowByValue_(sheet, col, value) {
   var values = sheet.getRange(2, col, lastRow - 1, 1).getValues();
   for (var i = 0; i < values.length; i++) {
     if (String(values[i][0] || '').trim().toLowerCase() === target) return i + 2;
+  }
+  return -1;
+}
+
+/**
+ * Locate a project row by id, and by domain too when both the column and a
+ * domain value exist — so same-id rows in different domains never collide.
+ */
+function findProjectRow_(sheet, c, domain, id) {
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2 || c.id < 1) return -1;
+  var targetId = String(id || '').trim().toLowerCase();
+  if (!targetId) return -1;
+  var targetDomain = c.domain > 0 ? String(domain || '').trim().toLowerCase() : '';
+  var lastCol = sheet.getLastColumn();
+  var values = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
+  for (var i = 0; i < values.length; i++) {
+    if (String(cell_(values[i], c.id) || '').trim().toLowerCase() !== targetId) continue;
+    if (targetDomain &&
+        String(cell_(values[i], c.domain) || '').trim().toLowerCase() !== targetDomain) {
+      continue;
+    }
+    return i + 2;
   }
   return -1;
 }
@@ -371,8 +406,8 @@ function addProject_(body) {
   var c = projectColumns_(sheet);
   var v = projectValues_(body);
 
-  if (findRowByValue_(sheet, c.id, v.id) >= 0) {
-    throw new Error('ID already exists: ' + v.id);
+  if (findProjectRow_(sheet, c, v.domain, v.id) >= 0) {
+    throw new Error('ID already exists in this domain: ' + v.id);
   }
 
   var row = buildEmptyRow_(sheet);
@@ -387,7 +422,7 @@ function updateProject_(body) {
   var c = projectColumns_(sheet);
   var v = projectValues_(body);
 
-  var rowIndex = findRowByValue_(sheet, c.id, v.id);
+  var rowIndex = findProjectRow_(sheet, c, v.domain, v.id);
   if (rowIndex < 0) throw new Error('ID not found: ' + v.id);
 
   var lastCol = sheet.getLastColumn();
@@ -402,7 +437,7 @@ function deleteProject_(body) {
   var c = projectColumns_(sheet);
   var id = String(body.id || '').trim();
   if (!id) throw new Error('ID is required.');
-  var rowIndex = findRowByValue_(sheet, c.id, id);
+  var rowIndex = findProjectRow_(sheet, c, body.team || body.domain, id);
   if (rowIndex < 0) throw new Error('ID not found: ' + id);
   sheet.deleteRow(rowIndex);
   return { ok: true };
@@ -415,7 +450,7 @@ function updateStatus_(body) {
   var status = String(body.status || '').trim();
   if (!id) throw new Error('ID is required.');
   if (!status) throw new Error('Status is required.');
-  var rowIndex = findRowByValue_(sheet, c.id, id);
+  var rowIndex = findProjectRow_(sheet, c, body.team || body.domain, id);
   if (rowIndex < 0) throw new Error('ID not found: ' + id);
   if (c.status < 1) throw new Error('Projects tab has no Status column.');
   sheet.getRange(rowIndex, c.status).setValue(status);
@@ -489,6 +524,11 @@ function addDomain_(body) {
     name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
   if (!name) throw new Error('Domain name is required.');
   if (!id) throw new Error('Domain id could not be derived.');
+  var reserved = ['meta', 'quarters', 'teams', 'cohorts', 'statuses', 'priorities',
+    'cookiebotsites', 'cookiebotreports'];
+  if (reserved.indexOf(id) >= 0) {
+    throw new Error('"' + name + '" is a reserved name - pick a different one.');
+  }
   var sheet = requireSheetByKeyword_('domain', 'Domains');
   var map = headerMap_(sheet);
   var idC = colOf_(map, ['title', 'id']);

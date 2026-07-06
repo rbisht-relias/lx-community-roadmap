@@ -2,17 +2,8 @@ import {
   formatTimelineRange,
   initiativeMatchesFilter,
   isFilterActive,
+  timelinePositionToCss,
 } from "../utils/roadmapUtils";
-
-/** Align bar edges with header quarter columns (1px border between each column). */
-export function timelinePositionToCss(position, quarterCount) {
-  const n = Math.max(1, quarterCount);
-  const full = Math.floor(position);
-  const frac = position - full;
-  const colExpr = `((100% - ${Math.max(0, n - 1)}px) / ${n})`;
-  if (n === 1) return `calc(${position} * 100%)`;
-  return `calc(${full} * (${colExpr} + 1px) + ${frac} * ${colExpr})`;
-}
 
 export default function InitiativeBar({ item, category, filterState, onShowTooltip, onHideTooltip, onSelect }) {
   const filterActive = isFilterActive(filterState);

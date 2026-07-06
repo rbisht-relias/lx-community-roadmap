@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import {
   formatDomainLabel,
   formatTimelineRange,
@@ -29,6 +30,19 @@ export default function ProjectDetail({
     : null;
 
   const open = Boolean(item);
+  const panelRef = useRef(null);
+
+  // Keyboard support: move focus into the drawer and close on Escape.
+  useEffect(() => {
+    if (!open) return undefined;
+    panelRef.current?.focus();
+    const onKey = (e) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
+
   const statuses = data.statuses || [];
   const priorities = data.priorities || [];
   const status = item ? resolveStatus(item.status, statuses) : null;
@@ -39,6 +53,8 @@ export default function ProjectDetail({
   return (
     <div className={`detail-overlay${open ? " is-open" : ""}`} onClick={onClose} role="presentation">
       <aside
+        ref={panelRef}
+        tabIndex={-1}
         className="detail"
         role="dialog"
         aria-modal="true"

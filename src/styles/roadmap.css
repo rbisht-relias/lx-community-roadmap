@@ -1362,6 +1362,11 @@ html[data-theme="light"] .delete-overlay__dot::before {
   background: var(--bg-elevated);
 }
 
+/* Lock sits apart from Cancel/Save, on the left edge of the footer. */
+.admin-btn--lock {
+  margin-right: auto;
+}
+
 .admin-field {
   display: flex;
   flex-direction: column;

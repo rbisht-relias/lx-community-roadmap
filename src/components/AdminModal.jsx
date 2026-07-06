@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { formatDomainLabel } from "../utils/roadmapUtils";
 import { validateInitiativeForm } from "../services/sheetsApi";
 
@@ -27,6 +27,7 @@ export default function AdminModal({
   mode = "add",
   initialValues = null,
   domains,
+  existingIdsByDomain = {},
   teamOptions = [],
   validTeamIds = [],
   statusOptions = [],
@@ -35,6 +36,7 @@ export default function AdminModal({
   validPriorityLabels = [],
   adminToken,
   onUnlock,
+  onLock,
   onClose,
   onSave,
 }) {
@@ -43,7 +45,16 @@ export default function AdminModal({
   const unlocked = Boolean(adminToken);
   const [form, setForm] = useState(() => buildInitialForm(domains, initialValues));
   const [fieldErrors, setFieldErrors] = useState({});
-  const [submitError, setSubmitError] = useState("");
+  const panelRef = useRef(null);
+
+  useEffect(() => {
+    panelRef.current?.focus();
+    const onKey = (e) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
 
   const handleUnlock = useCallback(
     (e) => {
@@ -63,7 +74,6 @@ export default function AdminModal({
       delete next.teams;
       return next;
     });
-    setSubmitError("");
   }, []);
 
   const toggleTeam = useCallback((teamId) => {
@@ -78,7 +88,6 @@ export default function AdminModal({
       delete next.teams;
       return next;
     });
-    setSubmitError("");
   }, []);
 
   const handleSubmit = useCallback(
@@ -95,7 +104,15 @@ export default function AdminModal({
         return;
       }
 
-      setSubmitError("");
+      if (!isEdit) {
+        const domainKey = form.domain.trim().toLowerCase();
+        const idKey = form.id.trim().toLowerCase();
+        if (existingIdsByDomain[domainKey]?.has(idKey)) {
+          setFieldErrors({ id: `ID already exists in this domain: ${form.id.trim()}` });
+          return;
+        }
+      }
+
       const payload = {
         adminToken,
         team: form.domain.trim(),
@@ -115,7 +132,17 @@ export default function AdminModal({
       onSave?.(payload);
       onClose();
     },
-    [adminToken, form, onSave, onClose, validTeamIds, validStatusLabels, validPriorityLabels]
+    [
+      adminToken,
+      form,
+      isEdit,
+      existingIdsByDomain,
+      onSave,
+      onClose,
+      validTeamIds,
+      validStatusLabels,
+      validPriorityLabels,
+    ]
   );
 
   const footer = (content) => (
@@ -125,6 +152,8 @@ export default function AdminModal({
   return (
     <div className="admin-modal" role="presentation" onClick={onClose}>
       <aside
+        ref={panelRef}
+        tabIndex={-1}
         className="admin-modal__panel"
         role="dialog"
         aria-labelledby="admin-modal-title"
@@ -396,14 +425,22 @@ export default function AdminModal({
               ) : null}
             </fieldset>
 
-            {submitError ? (
-              <p className="admin-modal__submit-error" role="alert">
-                {submitError}
-              </p>
-            ) : null}
             </div>
             {footer(
               <>
+                {onLock ? (
+                  <button
+                    type="button"
+                    className="admin-btn admin-btn--ghost admin-btn--lock"
+                    title="Forget the admin token on this device"
+                    onClick={() => {
+                      onLock();
+                      onClose();
+                    }}
+                  >
+                    Lock
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   className="admin-btn admin-btn--ghost"

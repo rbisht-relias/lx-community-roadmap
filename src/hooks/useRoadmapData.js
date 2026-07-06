@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { applyStatusToInitiative } from "../config/statusConfig";
 import { fetchRoadmap, getDataSource } from "../services/sheetsApi";
 import { getCachedRoadmap, cacheRoadmap } from "../db/database";
@@ -10,9 +10,14 @@ export function useRoadmapData() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [revalidating, setRevalidating] = useState(false);
+  // Monotonic id so overlapping loads resolve "latest wins": a slow, older
+  // fetch must never overwrite data from a newer load or optimistic apply.
+  const loadIdRef = useRef(0);
 
   const load = useCallback(async (signal, options = {}) => {
     const { skipCache = false } = options;
+    const loadId = ++loadIdRef.current;
+    const isStale = () => signal?.aborted || loadIdRef.current !== loadId;
     setError(null);
 
     const apply = (json) => {
@@ -29,7 +34,7 @@ export function useRoadmapData() {
     if (cached && !skipCache) {
       try {
         const snapshot = await getCachedRoadmap();
-        if (snapshot && !signal?.aborted) {
+        if (snapshot && !isStale()) {
           apply(snapshot);
           setLoading(false);
           shownFromCache = true;
@@ -46,11 +51,11 @@ export function useRoadmapData() {
 
     try {
       const json = await fetchRoadmap();
-      if (signal?.aborted) return;
+      if (isStale()) return;
       apply(json);
       if (cached) cacheRoadmap(json); // fire-and-forget; updates the snapshot
     } catch (err) {
-      if (signal?.aborted) return;
+      if (isStale()) return;
       // Keep whatever is on screen and stay silent; only surface an error when
       // there's truly nothing shown (first load, no cache).
       if (!shownFromCache && !skipCache) {
@@ -59,7 +64,7 @@ export function useRoadmapData() {
         );
       }
     } finally {
-      if (!signal?.aborted) {
+      if (!isStale()) {
         setLoading(false);
         setRevalidating(false);
       }
@@ -85,6 +90,10 @@ export function useRoadmapData() {
   // quarters, and refreshes the IndexedDB cache so a reload shows it too.
   const applyRoadmap = useCallback((next) => {
     if (!next) return;
+    // Drop any in-flight fetch: its (pre-optimistic) result must not land on
+    // top of this apply. The caller's follow-up refetch brings fresh data.
+    loadIdRef.current++;
+    setRevalidating(false);
     setData(next);
     try {
       setQuarters(setQuartersFromData(next));

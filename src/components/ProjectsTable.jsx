@@ -10,8 +10,6 @@ import {
 import { resolveStatus } from "../config/statusConfig";
 import { resolvePriority } from "../config/priorityConfig";
 
-const PRIORITY_RANK = { high: 3, medium: 2, low: 1 };
-
 const COLUMNS = [
   { key: "id", label: "ID" },
   { key: "name", label: "Name" },
@@ -35,14 +33,23 @@ function buildRows(data, filterState) {
   return rows;
 }
 
-function compareRows(a, b, key, dir) {
+/** Rank from the definition order (first-listed = highest), so custom priorities sort too. */
+function buildPriorityRank(priorities) {
+  const rank = new Map();
+  (priorities || []).forEach((p, i) => {
+    rank.set(String(p.label || "").toLowerCase(), priorities.length - i);
+  });
+  return rank;
+}
+
+function compareRows(a, b, key, dir, priorityRank) {
   const mul = dir === "asc" ? 1 : -1;
   let av;
   let bv;
   switch (key) {
     case "priority":
-      av = PRIORITY_RANK[String(a.priority || "").toLowerCase()] || 0;
-      bv = PRIORITY_RANK[String(b.priority || "").toLowerCase()] || 0;
+      av = priorityRank.get(String(a.priority || "").toLowerCase()) || 0;
+      bv = priorityRank.get(String(b.priority || "").toLowerCase()) || 0;
       return (av - bv) * mul;
     case "start":
       av = parseDate(a.timeline?.[0])?.getTime() || 0;
@@ -74,8 +81,9 @@ export default function ProjectsTable({
   }, [data.teams]);
 
   const rows = useMemo(() => {
+    const priorityRank = buildPriorityRank(data.priorities);
     const built = buildRows(data, filterState);
-    built.sort((a, b) => compareRows(a, b, sortKey, sortDir));
+    built.sort((a, b) => compareRows(a, b, sortKey, sortDir, priorityRank));
     return built;
   }, [data, filterState, sortKey, sortDir]);
 

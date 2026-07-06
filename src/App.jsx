@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import AdminModal from "./components/AdminModal";
 import {
   applyAdminTokenFromUrl,
@@ -49,7 +49,7 @@ const SIDEBAR_STORAGE_KEY = "roadmap_sidebar_collapsed";
 
 /** Turn an Add/Edit form payload into a roadmap item (for optimistic insert). */
 function formPayloadToItem(payload) {
-  return {
+  const item = {
     id: String(payload.id || "").trim(),
     name: payload.name || "",
     description: payload.description || "",
@@ -62,8 +62,11 @@ function formPayloadToItem(payload) {
       .split(/[,;]/)
       .map((t) => t.trim())
       .filter(Boolean),
-    progress: Number(payload.progress) || 0,
   };
+  // The edit form has no progress field — leave it out so the optimistic merge
+  // keeps the item's existing progress instead of wiping it to 0.
+  if (payload.progress !== undefined) item.progress = Number(payload.progress) || 0;
+  return item;
 }
 
 function getInitialView() {
@@ -214,7 +217,7 @@ export default function App() {
       const snapshot = data;
       const next = {
         ...data,
-        [domain]: [...(data[domain] || []), formPayloadToItem(payload)],
+        [domain]: [...(data[domain] || []), { progress: 0, ...formPayloadToItem(payload) }],
       };
       applyRoadmap(next);
       setAdminOpen(false);
@@ -295,9 +298,8 @@ export default function App() {
     });
   }, []);
 
-  useEffect(() => {
-    if (loading) setLoaderVisible(true);
-  }, [loading]);
+  // Re-show the loader if a full (non-background) load ever starts again.
+  if (loading && !loaderVisible) setLoaderVisible(true);
 
   useEffect(() => {
     try {
@@ -316,6 +318,15 @@ export default function App() {
   }, [sidebarCollapsed]);
 
   useEffect(() => () => clearHideTooltipTimer(), [clearHideTooltipTimer]);
+
+  const existingIdsByDomain = useMemo(() => {
+    if (!data) return {};
+    const map = {};
+    getDomainKeys(data).forEach((d) => {
+      map[d] = new Set((data[d] || []).map((p) => String(p.id).trim().toLowerCase()));
+    });
+    return map;
+  }, [data]);
 
   const showAdmin = hasSheetsApi();
   const adminUnlocked = Boolean(showAdmin && adminToken);
@@ -513,6 +524,7 @@ export default function App() {
       {adminOpen && data ? (
         <AdminModal
           initialValues={addPrefill}
+          existingIdsByDomain={existingIdsByDomain}
           domains={getDomainKeys(data)}
           teamOptions={getTeamOptionsForAdmin(data)}
           validTeamIds={getValidTeamIds(data)}

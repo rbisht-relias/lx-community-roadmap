@@ -8,12 +8,19 @@ export const DEFAULT_STATUSES = [
   { id: "Paused", label: "Paused", color: "#4b5563" },
 ];
 
+// Cache lookups per definitions array — resolveStatus runs once per initiative
+// per render, and rebuilding the Map each call is O(items × statuses).
+const lookupCache = new WeakMap();
+
 function buildLookup(definitions) {
+  const cached = lookupCache.get(definitions);
+  if (cached) return cached;
   const map = new Map();
   definitions.forEach((s) => {
     map.set(normalizeStatusKey(s.label), s);
     if (s.id) map.set(normalizeStatusKey(s.id), s);
   });
+  lookupCache.set(definitions, map);
   return map;
 }
 

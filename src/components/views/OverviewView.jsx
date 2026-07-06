@@ -3,6 +3,7 @@ import {
   getDomainKeys,
   formatDomainLabel,
   formatTimelineRange,
+  parseDate,
 } from "../../utils/roadmapUtils";
 import { resolveStatus } from "../../config/statusConfig";
 import { resolvePriority } from "../../config/priorityConfig";
@@ -81,6 +82,23 @@ export default function OverviewView({ data, onSelectProject }) {
 
   const domains = getDomainKeys(data);
 
+  // Genuinely "upcoming & active": not yet finished, soonest start first.
+  const upcoming = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return rows
+      .filter((r) => {
+        const end = parseDate(r.timeline?.[1]);
+        return !end || end >= today;
+      })
+      .sort(
+        (a, b) =>
+          (parseDate(a.timeline?.[0])?.getTime() || 0) -
+          (parseDate(b.timeline?.[0])?.getTime() || 0)
+      )
+      .slice(0, 8);
+  }, [rows]);
+
   return (
     <div className="overview">
       <div className="stat-grid">
@@ -155,8 +173,11 @@ export default function OverviewView({ data, onSelectProject }) {
 
       <section className="panel">
         <h3 className="panel__title">Upcoming &amp; active</h3>
+        {upcoming.length === 0 ? (
+          <p className="panel__empty">Nothing upcoming — all projects have wrapped up.</p>
+        ) : null}
         <ul className="mini-list">
-          {rows.slice(0, 8).map((r) => (
+          {upcoming.map((r) => (
             <li key={`${r.domain}-${r.id}`}>
               <button
                 type="button"

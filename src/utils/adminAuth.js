@@ -11,6 +11,13 @@ export function applyAdminTokenFromUrl() {
     const trimmed = String(token).trim();
     if (!trimmed) return "";
     setStoredAdminToken(trimmed);
+    // Strip the token from the address bar so it doesn't linger in browser
+    // history or get copied into shared links/screenshots.
+    params.delete(URL_TOKEN_PARAM);
+    const query = params.toString();
+    const cleanUrl =
+      window.location.pathname + (query ? `?${query}` : "") + window.location.hash;
+    window.history.replaceState(null, "", cleanUrl);
     return trimmed;
   } catch {
     return "";

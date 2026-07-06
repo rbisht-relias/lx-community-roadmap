@@ -27,7 +27,10 @@ function readStoredPreference() {
 
 export function useTheme() {
   const [preference, setPreference] = useState(readStoredPreference);
-  const resolved = resolveTheme(preference);
+  // Tracked in state (not just read once) so `resolved` stays correct when the
+  // OS theme changes while preference is "system".
+  const [systemTheme, setSystemTheme] = useState(getSystemTheme);
+  const resolved = preference === "system" ? systemTheme : preference;
 
   useEffect(() => {
     applyTheme(resolved);
@@ -39,14 +42,12 @@ export function useTheme() {
   }, [preference, resolved]);
 
   useEffect(() => {
-    if (preference !== "system") return undefined;
-
     const media = window.matchMedia("(prefers-color-scheme: dark)");
-    const sync = () => applyTheme(media.matches ? "dark" : "light");
+    const sync = () => setSystemTheme(media.matches ? "dark" : "light");
 
     media.addEventListener("change", sync);
     return () => media.removeEventListener("change", sync);
-  }, [preference]);
+  }, []);
 
   const setThemePreference = useCallback((next) => {
     setPreference(next);

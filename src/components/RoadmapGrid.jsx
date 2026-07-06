@@ -4,8 +4,9 @@ import {
   getRoadmapRows,
   isFilterActive,
   rowMatchesDomainFilter,
+  timelinePositionToCss,
 } from "../utils/roadmapUtils";
-import InitiativeBar, { timelinePositionToCss } from "./InitiativeBar";
+import InitiativeBar from "./InitiativeBar";
 
 const HEADER_ROWS = 2;
 
@@ -95,7 +96,14 @@ export default function RoadmapGrid({
       if (e.target.closest(".initiative")) return;
       const rect = e.currentTarget.getBoundingClientRect();
       const frac = clampFrac(((e.clientX - rect.left) / rect.width) * quarterCount, quarterCount);
-      dragRef.current = { rect, domain: row.id, startFrac: frac, currentFrac: frac };
+      dragRef.current = {
+        rect,
+        domain: row.id,
+        startFrac: frac,
+        currentFrac: frac,
+        startClientX: e.clientX,
+        moved: false,
+      };
       setDragging(true);
       setOverlay(buildOverlay());
       e.preventDefault();
@@ -106,14 +114,23 @@ export default function RoadmapGrid({
   useEffect(() => {
     if (!dragging) return undefined;
 
+    const cancel = () => {
+      dragRef.current = null;
+      setDragging(false);
+      setOverlay(null);
+    };
     const onMove = (e) => {
-      if (!dragRef.current) return;
-      dragRef.current.currentFrac = computeFrac(e.clientX);
+      const drag = dragRef.current;
+      if (!drag) return;
+      if (Math.abs(e.clientX - drag.startClientX) > 4) drag.moved = true;
+      drag.currentFrac = computeFrac(e.clientX);
       setOverlay(buildOverlay());
     };
     const onUp = () => {
       const drag = dragRef.current;
-      if (drag && onCreateRange) {
+      // Only a real drag creates a range — a stray click on empty track
+      // shouldn't pop the Add modal.
+      if (drag && drag.moved && onCreateRange) {
         const { startQi, endExcl } = snapSpan(drag.startFrac, drag.currentFrac, quarterCount);
         onCreateRange({
           domain: drag.domain,
@@ -121,16 +138,19 @@ export default function RoadmapGrid({
           timelineEnd: quarterEndISO(quarters[endExcl - 1]),
         });
       }
-      dragRef.current = null;
-      setDragging(false);
-      setOverlay(null);
+      cancel();
+    };
+    const onKeyDown = (e) => {
+      if (e.key === "Escape") cancel();
     };
 
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
+    window.addEventListener("keydown", onKeyDown);
     return () => {
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
+      window.removeEventListener("keydown", onKeyDown);
     };
   }, [dragging, computeFrac, buildOverlay, onCreateRange, quarterCount, quarters]);
 

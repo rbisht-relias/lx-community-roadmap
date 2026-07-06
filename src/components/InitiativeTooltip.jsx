@@ -58,12 +58,17 @@ export default function InitiativeTooltip({
     return () => window.removeEventListener("scroll", handleScroll, true);
   }, [item, target, canDelete, canEditStatus, deleteError, statusError, localStatus]);
 
-  useEffect(() => {
+  // Reset transient state when the hovered initiative (or its status) changes.
+  // Done during render — React's recommended alternative to a sync-setState effect.
+  const resetKey = `${domain ?? ""}|${item?.id ?? ""}|${item?.status ?? ""}`;
+  const [prevResetKey, setPrevResetKey] = useState(resetKey);
+  if (resetKey !== prevResetKey) {
+    setPrevResetKey(resetKey);
     setDeleteError("");
     setDeleting(false);
     setStatusError("");
     setLocalStatus(item?.status || "");
-  }, [item?.id, domain, item?.status]);
+  }
 
   const handleDelete = useCallback(async () => {
     if (!item || !domain || !onDelete || deleting) return;

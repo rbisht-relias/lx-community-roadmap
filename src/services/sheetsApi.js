@@ -163,6 +163,12 @@ export async function fetchRoadmap() {
 
   const res = await fetch(apiUrl);
   const payload = await parseJsonResponse(res);
+  // Apps Script can't set HTTP status codes, so errors arrive as 200s with an
+  // {error} body. Without this check a backend hiccup would render (and cache)
+  // an empty roadmap instead of surfacing the failure.
+  if (payload?.error && !Array.isArray(payload.projects)) {
+    throw new Error(payload.error);
+  }
   return mergeRoadmapData(normalizeRemotePayload(payload));
 }
 

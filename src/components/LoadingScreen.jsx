@@ -6,16 +6,22 @@ const FINISH_MS = 320;
 const FADE_MS = 200;
 
 export default function LoadingScreen({ pending, onFinish }) {
-  const [progress, setProgress] = useState(0);
+  const [progress, setProgress] = useState(() => (pending ? 0 : 100));
   const [fading, setFading] = useState(false);
+
+  // Snap progress when `pending` flips — done during render (React's
+  // recommended alternative to a sync-setState effect).
+  const [prevPending, setPrevPending] = useState(pending);
+  if (pending !== prevPending) {
+    setPrevPending(pending);
+    setProgress(pending ? 0 : 100);
+    if (pending) setFading(false);
+  }
 
   useEffect(() => {
     if (!pending) {
       return undefined;
     }
-
-    setFading(false);
-    setProgress(0);
 
     const interval = window.setInterval(() => {
       setProgress((prev) => {
@@ -30,8 +36,6 @@ export default function LoadingScreen({ pending, onFinish }) {
 
   useEffect(() => {
     if (pending) return undefined;
-
-    setProgress(100);
 
     const fadeTimer = window.setTimeout(() => setFading(true), FINISH_MS);
     const doneTimer = window.setTimeout(() => onFinish?.(), FINISH_MS + FADE_MS);

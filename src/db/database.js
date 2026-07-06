@@ -234,7 +234,11 @@ async function updateStatus(payload) {
 export async function postToLocal(payload) {
   const action = String(payload.action || "add").trim().toLowerCase();
   if (action === "addteam") {
-    await createTeam({ name: payload.teamName || payload.label, color: payload.color });
+    await createTeam({
+      id: payload.teamId,
+      name: payload.teamName || payload.label,
+      color: payload.color,
+    });
     return { ok: true };
   }
   if (action === "deleteteam") {
@@ -400,10 +404,10 @@ export function listTeams() {
   return db.teams.toArray();
 }
 
-export async function createTeam({ name, color }) {
+export async function createTeam({ id: explicitId, name, color }) {
   const clean = String(name || "").trim();
   if (!clean) throw new Error("Team name is required.");
-  const id = slug(clean);
+  const id = String(explicitId || "").trim() || slug(clean);
   if (!id) throw new Error("Team name must contain letters or numbers.");
   if (await db.teams.get(id)) throw new Error(`Team already exists: ${clean}`);
   await db.teams.add({ id, label: clean, color: String(color || "").trim() || "#64748b" });
@@ -437,8 +441,14 @@ export async function createStatus({ label, color }) {
   return id;
 }
 
-export async function deleteStatusDef(id) {
-  await db.statuses.delete(id);
+export async function deleteStatusDef(labelOrId) {
+  const target = slug(labelOrId);
+  const rows = await db.statuses.toArray();
+  // Seeded rows use label-style ids ("In Progress"); created rows use slugs
+  // ("in-progress") — match either form so deletes never silently no-op.
+  const hit = rows.find((r) => slug(r.id) === target || slug(r.label) === target);
+  if (!hit) throw new Error(`Status not found: ${labelOrId}`);
+  await db.statuses.delete(hit.id);
 }
 
 export function listPriorities() {
@@ -454,8 +464,12 @@ export async function createPriority({ label, color }) {
   return id;
 }
 
-export async function deletePriorityDef(id) {
-  await db.priorities.delete(id);
+export async function deletePriorityDef(labelOrId) {
+  const target = slug(labelOrId);
+  const rows = await db.priorities.toArray();
+  const hit = rows.find((r) => slug(r.id) === target || slug(r.label) === target);
+  if (!hit) throw new Error(`Priority not found: ${labelOrId}`);
+  await db.priorities.delete(hit.id);
 }
 
 /* ----------------------- Remote cache (SWR) --------------------------- */

@@ -31,7 +31,9 @@ function formatDate(iso) {
 
 function GcmRow({ label, value }) {
   const v = value || "—";
-  const ok = /no risk|active|no\b/i.test(v) && !/at risk|fail|missing/i.test(v);
+  // Negative signals first, so e.g. "Inactive" / "Not active" never reads as ok.
+  const bad = /inactive|not active|at risk|fail|missing|none/i.test(v);
+  const ok = !bad && /no risk|active|yes|enabled|no\b/i.test(v);
   return (
     <li>
       <span>{label}</span>
@@ -187,7 +189,10 @@ export default function SitesView({ adminUnlocked, data, adminToken, refetch }) 
               <button
                 type="button"
                 className={`sites__site${site.name === selectedSite?.name ? " is-active" : ""}`}
-                onClick={() => setSelectedName(site.name)}
+                onClick={() => {
+                  setSelectedName(site.name);
+                  setSelectedReportKey(null); // each site defaults to its latest report
+                }}
               >
                 <span className="sites__site-name">{site.name}</span>
                 {site.domain ? <span className="sites__site-url">{site.domain}</span> : null}

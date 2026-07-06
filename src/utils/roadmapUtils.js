@@ -16,6 +16,16 @@ function getStatusDefinitions(data) {
   return data?.statuses?.length ? data.statuses : DEFAULT_STATUSES;
 }
 
+/** Align bar edges with header quarter columns (1px border between each column). */
+export function timelinePositionToCss(position, quarterCount) {
+  const n = Math.max(1, quarterCount);
+  const full = Math.floor(position);
+  const frac = position - full;
+  const colExpr = `((100% - ${Math.max(0, n - 1)}px) / ${n})`;
+  if (n === 1) return `calc(${position} * 100%)`;
+  return `calc(${full} * (${colExpr} + 1px) + ${frac} * ${colExpr})`;
+}
+
 export function getDomainKeys(data) {
   return Object.keys(data).filter(
     (key) => !RESERVED_DATA_KEYS.has(key) && Array.isArray(data[key])
@@ -107,7 +117,10 @@ export function formatTimelineRange(timeline) {
 
 export function parseQuarterEnd(value) {
   if (!value) return null;
-  const normalized = String(value).includes("T") ? value : `${value}T23:59:59`;
+  // Parse in UTC ("Z") to match how bare "YYYY-MM-DD" start dates are parsed;
+  // a local-time suffix would shift quarter boundaries by a day in UTC-negative
+  // timezones (e.g. a 2026-04-01 start rendering inside Q1 in New York).
+  const normalized = String(value).includes("T") ? value : `${value}T23:59:59Z`;
   return parseDate(normalized);
 }
 
